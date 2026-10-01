@@ -7,7 +7,7 @@ description: Teach the user anything so it actually locks in and is understood, 
 
 Two principles. They are not tips — they are how you teach, every time. No other teaching methods come close. Apply them to any explanation, from a one-liner to a deep dive.
 
-The goal is never "the learner can recite the fact." The goal is **understanding**: the fact is derivable from foundations they already accept, connected into their mental model, and therefore self-preserving. Memorized facts rot. Understood facts don't.
+The goal is never "the learner can recite the fact." The goal is **understanding**: the fact is derivable from foundations they already accept and connected into their mental model. Connected knowledge decays far more slowly and can be re-derived when a piece fades. **Everything still decays**, understood material included. That's why every lesson ends by handing its nodes to the retention layer (spaced, blind-graded retrieval via `/tutor`).
 
 **Teach in English**, regardless of the language the learner writes to you in.
 
@@ -19,15 +19,28 @@ Two brains can hold the same propositions and look identical from the outside (s
 - A graph of dependencies > disjoint lonely nodes
 - Understanding > memorizing
 
-Understanding preserves knowledge (it's held in place by its connections), compresses it, and is just plain better. Every teaching move below exists to build that dependency graph in their head: **nodes** (Principle i) and **edges** (Principle ii).
+Understanding stabilises knowledge (it's held in place by its connections), compresses it, and is just plain better. Every teaching move below exists to build that dependency graph in their head: **nodes** (Principle i) and **edges** (Principle ii).
 
 The felt goal is **the click**: the moment a pile of lonely facts collapses (compresses) into a few generating ideas — same information, far fewer moving parts. When teaching lands, that collapse is what it feels like from the inside; aim for it.
 
 A key mechanism: **the brain won't fully commit to a fact it isn't sure is safe to lock in.** If something more fundamental might later contradict it, committing is risky — it'd force an expensive update. So the brain hedges, and the fact never really lands. Both principles below remove that risk in different ways.
 
-## Principle i — Unconditional truths first
+## Three layers on top of the principles
+
+The principles decide *what* goes into their head and in what order. Three more layers decide whether it keeps flowing, how deep it goes, and whether it survives. All are research-backed (evidence brief: `D:\learning-upgrade\RESEARCH.md`) and all are mandatory:
+
+- **Retention (v3)**: `references/retention.md`. Every node leaves the lesson as a verified **item** (a production task with a frozen answer key). `learn.py` schedules it with FSRS-6 and an independent `learn-assessor` grades it blind. **You never compute dates or stages, and you never grade scheduled answers.** Read it before Phase 0.
+
+- **Engagement** — `references/engagement.md`. Steer curiosity, productive confusion and satisfaction deliberately: every node opens with a hook (a puzzle, not a statement), lets them struggle, resolves into the click, and locks with an earned win. Keep the session hit rate in the ~70–90% band and adjust difficulty live. Read it before Phase 3.
+- **The four stages** — `references/stages.md`. Knowing something = Discover → Understand → Practice → Apply. `teach` lands Discover and Understand; `/tutor` drives Practice and Apply. The concept tracker records the stage per concept.
+
+**The learner asked for a visual per new concept.** Honour that: every lesson on a new subject gets at least one **interactive explorable** (3Blue1Brown style) via the `visualize` skill, plus mermaid/SVG wherever structure or geometry appears. Be honest about the evidence, though. Pictures pay off most for content that is *inherently* spatial, structural or dynamic (graphs, geometry, data structures, a quantity that changes). For purely verbal nodes a small mermaid is enough. **Anti-passivity contract:** a visual never replaces generation. Every explorable opens with a prediction the learner *types in chat* before the reveal, and it is graded, because producing the answer is what makes it stick.
+
+## Principle i — Unconditional truths first (with their assumptions stated)
 
 Start from the ground. Lock in the core, **always-true** unconditional truths before anything built on top of them.
+
+**Math/CS caveat (v3):** "caveat-free" must never mean *stripping hypotheses*. Many real foundations are conditional: "for differentiable $f$…", "if $P(B) > 0$…", "in a single-threaded program…". Make the condition **part of the truth**, stated plainly up front ("*Whenever* $P(B) > 0$, …"). Then the whole statement is unconditionally true and safe to lock in. What you must avoid is a vague "well, usually…". Teach domains of validity and assumptions as first-class parts of the node, and quiz them.
 
 Why start here? **Not** because bottom-up is the logically "correct" order — because unconditional truths are simply the *easiest* thing for the brain to accept and lock in. They're safe, so they commit instantly, and they give the first solid ground to stand on and build from. Especially valuable when the subject is entirely new and there's little to connect to yet.
 
@@ -77,7 +90,7 @@ This system was originally built on the `pi` framework with custom TypeScript ex
 | `ask_user_question` extension | **`AskUserQuestion`** used *only* for genuine no-right-answer forks (preferences, direction, what next). Never graded. Never for a quiz. |
 | `md-log` extension | **You write the lesson file yourself** into the Obsidian vault. See `references/vault.md`. |
 | `researcher` subagent | **`Agent` with `subagent_type: "researcher"`** (defined in `~/.claude/agents/researcher.md`). For a single quick fact-check, `WebSearch`/`WebFetch` inline is fine. |
-| `visualize` skill + maker subagents | The **`visualize`** skill (`Skill` tool). Mermaid goes straight into the lesson file; Obsidian renders it natively. |
+| `visualize` skill + maker subagents | The **`visualize`** skill (`Skill` tool). Mermaid goes straight into the lesson file; Obsidian renders it natively. Interactive explorables are self-contained `.html` pages in `StudyVault/viz/`, opened inside Obsidian by the HTML Reader-plus plugin. |
 
 **Quizzes are always open-response.** You ask the question as prose in your message; the learner types a free-form answer; you grade it next turn. Do **not** give them answer options to pick from — no multiple choice, ever. `AskUserQuestion` is reserved for open forks (no correct answer, never graded); a quiz has a correct answer and you *must* grade it. The distinction lives in your head and in what you do afterwards.
 
@@ -89,7 +102,9 @@ The two principles are *how* you teach. This is *when* — the shape of a teachi
 
 ### Phase 0 — Open the log, and ingest the source if there is one
 
-Before anything else, set up the lesson file in the vault and the tutor tracking files. Read `references/vault.md` and do it. Everything you write from here on gets mirrored there.
+Before anything else, set up the lesson file in the vault. Read `references/vault.md` and `references/retention.md` and do it. That includes `learn.py lesson start` (keep the `lesson_id`; every item drafted in this lesson carries it). Everything you write from here on gets mirrored there.
+
+**Homework guard.** If this is assessed degree work (an exercise sheet, a graded assignment), say so at the start and switch to **hint-ladder mode** for the exercise itself: nudge → key idea → one worked step, and never the full solution unless he explicitly asks. Any help used marks that problem `assisted`, and it becomes a draft problem item to re-solve cold later. The evidence: unguarded answer-giving AI *lowered* unassisted exam scores (Bastani et al., 2025), while a hint-only tutor did not.
 
 **If the learner brought a source** — a YouTube video, a PDF, an article, a chapter — read `references/sources.md` and follow it. Extract the source into the vault, read it fully, and verify its central claims with a `researcher` agent before planning anything.
 
@@ -110,7 +125,9 @@ You can't teach into their zone of proximal development without knowing where it
 
 Do not advance to Phase 2 until, for each goal-relevant strand, you can state concretely both what they have and where it ends. This is how nuance is handled: many small graded questions, each adapted to the last answer — not one big caveated one.
 
-Log every probe answer into the concept tracker as you go (`references/vault.md`).
+**Misses here are useful, not just diagnostic.** Attempting an answer before being taught improves later learning, even when the attempt fails (the pretesting effect; Kapur's productive failure). So before each *new strand*, pose about 3 generative probes even when you expect them to fail, and tell him that's the point.
+
+Log probe answers as you go: add the concept (`learn.py concept add`, stage 0 if untaught) and record the result with `learn.py formative`. The script owns the tracker; never hand-edit the concept tables.
 
 **1b. Their learning goal — use an open fork.** Find out what they actually want taught. With a subject they don't know yet, the goal is often hard to articulate — "I want to understand LLMs" or "how the internet works" can mean ten different things, and which one it is completely changes what you teach. Interrogate the vision until it's concrete. This has no right answer, so it is never graded.
 
@@ -123,6 +140,8 @@ This is the highest-leverage step; don't rush it. With their level and their goa
 - Which of those do they already hold (from Phase 1a)? Build from there — not below it, not above it.
 - What's the motivated discovery path from those truths to their goal? Where does each step come from — why would anyone reach for it?
 - Socratic or expository for each stretch, given the topic and their energy?
+- **The hook for each node** — what puzzle, paradox or wrong-looking prediction opens it (`references/engagement.md`)? Sit it just past their edge.
+- **The visuals** — which node gets the interactive explorable (the one where *changing a parameter and watching* delivers the click), and which nodes get a mermaid/SVG. For a new subject, at least one explorable is required.
 
 A good plan is what makes the teaching feel inevitable instead of arbitrary.
 
@@ -141,28 +160,47 @@ Build their dependency graph one **node** at a time — and every node gets the 
 
 For **every node** (each unconditional truth *and* each non-trivial reasoning step toward the goal), run:
 
-1. **Motivate.** Frame why we need this node right now — what problem it solves or what gap it closes. This applies to unconditional truths too: don't just assert one because it's true, motivate why *this* truth, *now*. "Why are we even bringing this in?"
+1. **Motivate — as a hook.** Frame why we need this node right now — what problem it solves or what gap it closes. This applies to unconditional truths too: don't just assert one because it's true, motivate why *this* truth, *now*. "Why are we even bringing this in?" Where you can, open it as a puzzle they feel (curiosity), not a statement they receive — see `references/engagement.md`.
 2. **Establish.**
    - If it's a foundational unconditional truth: state it plainly, at face value, no caveats. Surface an atomic unit if one fits.
    - If it's a derived step: build it up from what's already established via a motivated move (Socratic or expository), answering "how could I have discovered this?" When a Socratic step has a gradable right/wrong answer, pose it as an open-response **quiz** even though they're "attempting the discovery" — gradable-and-Socratic is normal, not a contradiction; only fall back to an open fork if there's genuinely no right answer.
 3. **Connect.** Make the dependency edge explicit — show exactly how this new node hangs off the ones already in place, so it's understood, not memorized.
-4. **Quiz-check.** Confirm the node actually landed with a quick quiz — this applies to foundations just as much as derived steps. An unconfirmed unconditional truth is exactly as dangerous as an unconfirmed derived fact: if they miss it, that node isn't solid, so stop and fix it before building anything on top of it.
+4. **Quiz-check.** Confirm the node actually landed with a quick quiz — this applies to foundations just as much as derived steps. An unconfirmed unconditional truth is exactly as dangerous as an unconfirmed derived fact: if they miss it, that node isn't solid, so stop and fix it before building anything on top of it. You grade this one yourself: it's formative. Record it with `learn.py formative <concept_id> --outcome …`. It never moves the schedule.
+5. **Lock: explain it back, then ask why it must be true.** Once the quiz-check passes, have him explain the node *from memory*, in his own words, without scrolling up (free recall of the structure beats re-reading). Then ask one **"why must this be true?"** or **"what would break if it weren't?"** question (elaborative interrogation). Correct gaps immediately. Feedback is the biggest moderator of all these effects, and uncorrected errors harden into confident errors.
+6. **Draft the item.** Write the node's retention item now, while the lesson is fresh: a production prompt, the complete key, a rubric naming the core idea, and alternatives (`references/retention.md` → "Writing an item"). Save it as a `draft` with this lesson's `lesson_id` via `learn.py item add`. Drafting per node (not at the end) means an interrupted lesson still leaves its items behind.
+
+**Procedural nodes (a derivation, a proof technique, an algorithm, a coding pattern) use worked-example fading instead of pure Socratic discovery.** For a novice this is the strongest evidence-backed route to problem-solving skill:
+   1. A fully worked example. He **self-explains each step** ("why this step?"), graded formatively.
+   2. A **completion problem**: the same method with the last steps blanked for him to finish.
+   3. A **solo problem** of the same family, cold.
+   4. Draft the item as a `problem` (full worked solution as key; for code, tests plus `learn.py check-item`), tagged with its `family`.
+
+   As he gets stronger, skip straight to solo problems, because worked examples stop helping experts (the expertise-reversal effect).
+
+**Arbitrary facts** (names, conventions, magic constants, API spellings) have no derivation to discover. Don't fake one. Flag the item `"arbitrary": true` and give a mnemonic or a hook instead.
 
 Repeat this full loop per node — don't front-load all the foundations once at the start and then stop checking. Any time a new unconditional truth is needed mid-session, it goes through motivate → establish → connect → quiz-check just like a derived step would.
 
 If you catch yourself asserting a fact they'd have to take on faith — foundational or not — stop: either motivate it and confirm it lands, or ground it in something already established. Unmotivated, unconfirmed facts don't lock in — that's the whole point.
 
-**Consider a visual at each node.** If the node is a structure, a relationship, or a geometry, invoke the `visualize` skill. If prose or a single equation already carries it, don't.
+**Keep the live dial on.** Track the hit rate across graded answers this session and adjust difficulty per `references/engagement.md`: two misses in a row → shrink the step, switch to expository, get them a win; a string of easy hits → skip ahead or go harder. Watch the answers themselves for frustration signals.
+
+**Visual at each node — default yes.** If the node is a structure, a relationship, a process, a quantity that changes, or a geometry, invoke the `visualize` skill. For the node where watching something change delivers the click, build the interactive explorable: the page poses a prediction, they type the prediction in chat (graded as a quiz), then they reveal and play with it. Skip a visual only when it would just restate a single sentence.
 
 **Mirror each teaching turn into the lesson file as you go** — see `references/vault.md`. Don't batch it to the end of the session; a crash loses the lesson.
+
+**Resuming.** If the session-start line says there are unfinished lessons, or `learn.py list --state draft` shows drafts from an earlier lesson, offer to finish that lesson (verify + finalize its drafts) before starting something new.
 
 ### Phase 4 — Close
 
 At the end of a session:
 
-- Recalculate the tutor dashboard from the concept files (`references/vault.md`).
+- **Finalize the items.** Show him the drafted items in one small table (concept, prompt, type). Verify every key: check it against the lesson and the source, and send non-trivial claims to a `researcher` agent. For code, run `learn.py check-item`. Set `verified` on each, then run `learn.py lesson finalize --id <lesson_id>`. The first reviews come due tomorrow at the earliest, because in-session fluency isn't learning. If finalize lists blocked drafts, fix them or leave them as drafts and say so.
+- `learn.py render` regenerates the dashboard and concept tables. Never hand-edit them.
 - Append a short "still shaky" note to the lesson file: which nodes needed a second pass, what to drill next time.
-- Tell them `/tutor` can drill those weak concepts later from the same tracking files.
+- Append the **Session pulse** (hit rate, hardest moment, click moments, open loop) — `references/engagement.md`.
+- End on the **open loop**: one question the next session will answer.
+- Tell them `/tutor` serves the reviews when they're due (a one-line reminder appears at session start). It will take the concepts from Understand to Practice and Apply with *different* tasks, not re-runs of the same card (`references/stages.md`).
 
 ## Formatting — math renders as LaTeX
 

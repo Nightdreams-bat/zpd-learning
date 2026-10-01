@@ -23,7 +23,6 @@ from pathlib import Path
 
 YT_DLP_CANDIDATES = [
     "yt-dlp",
-    str(Path.home() / "AppData/Local/Programs/Python/Python312/Scripts/yt-dlp.exe"),
 ]
 PDFTOTEXT_CANDIDATES = [
     "pdftotext",

@@ -51,7 +51,7 @@ Immediately after their answer comes back:
 1. **Verdict line**: ✓ or ✗ (or "partial"), restating what they got right and what's missing or wrong.
 2. **Explanation** — for a miss, name *the belief that produced that specific wrong answer* and why it fails, not just the correct answer. What they said is the diagnostic; use it. For a hit, one line confirming *why* it's right, so the connection is reinforced, not just the fact. For a partial, close the gap explicitly.
 3. If they missed, **the node is not solid.** Do not build on it. Go back, re-motivate, re-establish, re-check.
-4. **Write it to the concept tracker** — see `vault.md`.
+4. **Log it**: in `teach` these in-lesson checks are formative → `learn.py formative <concept_id> --outcome …` (see `retention.md`). Scheduled reviews in `/tutor` are never graded by you. They go to the blind `learn-assessor`.
 
 For a multi-question round, a small table reads best:
 

@@ -1,54 +1,31 @@
-# Quiz Design Rules
+# Quiz design rules (tutor v3)
 
-## Open-Response Only (CRITICAL)
+Items are written once, verified and frozen (see `~/.claude/skills/teach/references/retention.md` → "Writing an item"). These rules cover the questions `tutor` composes on the fly: **variants**, **apply** and **transfer** tasks, and **explain-a-change** probes.
 
-Every quiz question is answered by the user **in their own words**. There are no answer options, ever — no multiple choice, no AskUserQuestion for questions. Post the questions as plain text; wait for the user's typed answers; then grade.
+## Always
 
-## Zero-Hint Policy (CRITICAL)
+1. **Production, never recognition.** The learner writes the answer, derivation or code. No options, no yes/no.
+2. **No hints in the stem.** BAD: "Which error stream does error() use?" GOOD: "Where does error() output go, and why?"
+3. **Anchor to a concrete scenario** so a vague answer can't pass.
+4. **Ask for the reason** ("…and why?"). A right verdict with wrong reasoning is a miss.
+5. **One idea per question.** Split it if the rubric would need two unrelated ideas.
+6. **Key first.** Write `k.json` (key, rubric with the core idea or required steps, accepted alternatives) *before* asking. The grader grades against it blind.
 
-Every question must be answerable ONLY by someone who actually knows the material.
+## By purpose
 
-1. **Question phrasing**: Ask about behavior/purpose/output/cause, don't hint at the answer
-   - BAD: "Which error stream does error() use?"
-   - GOOD: "Where does the error() method's output go, and why?"
-2. **Make it un-guessable**: with no options to eliminate, a vague question gets a vague answer. Anchor each question to a concrete scenario.
-3. **Ask for reasoning**: "…and why?" — a correct verdict with wrong reasoning is not a pass.
+| Purpose | Shape |
+|---|---|
+| **Variant** (→ Practice) | Same core idea, new numbers or context. Solvable fast by someone fluent. |
+| **Apply** (→ Apply) | Unseen situation from the learner's world (trading plan, Pine script, Claude Code setup, degree exercise), or "critique this flawed use". The learner must decide *whether and how* the idea applies. |
+| **Transfer** (checkpoint) | An unseen problem matched in difficulty and family to taught ones. |
+| **Explain-a-change** | "What does this diff do, why, and what could break?" |
 
-## Question Types
+## Math and code
 
-1. **Conceptual understanding**: "Why does the system use X pattern?"
-2. **Behavioral prediction**: "What happens when X fails?"
-3. **Comparison/distinction**: "What is the difference between X and Y, and when does it matter?"
-4. **Debugging scenario**: "Given this error, what is the most likely cause?"
-5. **Factual recall**: use sparingly, only for genuinely load-bearing facts.
+- Math rubrics list the **required steps**, not only the final answer. A valid alternative method counts.
+- Code items use tests (`LEARN check`). Tests passing is necessary. If the prompt also asks for an explanation, the explanation is graded too.
+- For the same concept, **vary the surface** (numbers, names, context) and keep the method. For discrimination practice, **vary the method** across neighbouring families, e.g. substitution vs parts, or two-pointer vs hash map.
 
-## Difficulty Balancing
+## Drilling a concept that was missed
 
-- Diagnostic: easy 40%, medium 40%, hard 20%
-- Weak-area drill: medium 30%, hard 70%
-- Review: all levels evenly
-
-## Drilling Unresolved Concepts
-
-When targeting 🔴 concepts from concept files:
-- Do NOT repeat the exact same question — rephrase in a new context
-- Test the same underlying knowledge from a different angle
-- E.g., if user confused "400 vs 422", give a new scenario where they must say which status code applies and why
-
-## Format
-
-- 4 questions per round, plain text, numbered Q1–Q4
-- User answers each in free text
-
-## Grading Protocol
-
-After the user answers:
-1. Results table: question / correct answer / user's answer / ✓ / ✗ / partial
-2. For wrong or partial answers: name the misconception behind what they wrote, then give the correct understanding
-3. Update `concepts/{area}.md` — add/update concept rows + error notes
-4. Update dashboard — recalculate area stats from concept files
-5. Badges: 🟥 0-39% · 🟨 40-69% · 🟩 70-89% · 🟦 90-100% · ⬜ no data
-
-## Language Rule
-
-All file content and output in the user's detected language. Badge emojis are universal.
+Never re-ask the same question verbatim. Test the same idea from a new angle, in a new context.

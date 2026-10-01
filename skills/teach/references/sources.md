@@ -19,10 +19,10 @@ Everything lands in `StudyVault/<Area>/_sources/<slug>.md`. Do this before Phase
 ### YouTube
 
 ```bash
-python ~/.claude/skills/teach/scripts/ingest.py "<url>" "<vault>/StudyVault/<Area>/_sources/<slug>.md"
+python "~/.claude/skills/teach/scripts/ingest.py" "<url>" "<vault>/StudyVault/<Area>\_sources\<slug>.md"
 ```
 
-On Windows, if bare `python` opens the Microsoft Store stub, call your real interpreter by its full path instead.
+If bare `python` resolves to the Windows Store stub, use the full path to your Python install.
 
 Pulls the captions (manual track preferred over auto-generated), strips YouTube's rolling-caption duplication, and writes the transcript with `**[mm:ss]**` markers every 30 seconds. Those markers matter — cite them when you teach ("the derivation at [07:30]") so the learner can jump back to the exact moment.
 
@@ -31,7 +31,7 @@ If the video has no captions at all, the script says so. There is no local trans
 ### PDF
 
 ```bash
-python ~/.claude/skills/teach/scripts/ingest.py "<file.pdf>" "<vault>/StudyVault/<Area>/_sources/<slug>.md"
+python "~/.claude/skills/teach/scripts/ingest.py" "<file.pdf>" "<vault>/StudyVault/<Area>\_sources\<slug>.md"
 ```
 
 Uses `pdftotext -layout`, with `**[p.N]**` page markers. Cite page numbers when teaching.
@@ -39,7 +39,7 @@ Uses `pdftotext -layout`, with `**[p.N]**` page markers. Cite page numbers when 
 **Caveat — two-column PDFs.** `-layout` preserves visual columns, which for academic two-column papers can interleave the two columns line by line into nonsense. **Read the output before teaching from it.** If it looks interleaved, re-extract without layout preservation:
 
 ```bash
-pdftotext -enc UTF-8 "<file.pdf>" "<out.txt>"
+"C:\Program Files\Git\mingw64\bin\pdftotext.exe" -enc UTF-8 "<file.pdf>" "<out.txt>"
 ```
 
 Scanned PDFs (images, no text layer) produce an empty or near-empty file. There's no OCR installed — say so rather than teaching from a broken extraction.

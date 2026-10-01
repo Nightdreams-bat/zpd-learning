@@ -1,6 +1,6 @@
 ---
 name: visualize
-description: Add a correct, minimal visual to a lesson — a diagram or geometric picture — that renders inline in the Obsidian lesson log. Use when an idea is genuinely clearer as a picture: a dependency graph, system/flow, sequence, state machine, tree, comparison, or a spatial/geometric thing (coordinate geometry, number line, vectors, a plot, a physical layout).
+description: Add a correct visual to a lesson — a mermaid/SVG diagram inline in the Obsidian lesson log, or a 3Blue1Brown-style interactive HTML explorable (predict-then-reveal, animated, with sliders) opened inside Obsidian. Use when an idea is clearer as a picture or as something you can play with: a dependency graph, system/flow, sequence, state machine, tree, comparison, a spatial/geometric thing, or a quantity/process that changes.
 ---
 
 # Visualize
@@ -18,7 +18,13 @@ The `teach` system builds a **dependency graph in the learner's head** — uncon
 
 Do NOT visualize when prose or a single equation already carries it. A decorative diagram that just restates the sentence next to it adds noise and a chance to be wrong. When in doubt, don't — a missing visual is cheaper than a false one.
 
-## Two paths
+## Evidence and the anti-passivity contract (v3)
+
+- **When pictures pay off:** dual coding helps most when the content is *inherently* spatial, structural or dynamic (computation graphs, geometry, data structures, a quantity that changes). "Imagery for text" in general is a weak technique (Dunlosky et al., 2013). So match the tool to the content: an explorable where watching something change delivers the click, a small mermaid for structure, and nothing for a sentence that is already clear.
+- **Never passive.** Every explorable starts with a prediction the learner **types in chat** before the reveal, and that prediction is graded as a quiz. A page that is only played with is re-watching, and re-watching is not study.
+- The learner asked for a visual per new concept. Keep doing that, choosing the lightest visual that shows the structure.
+
+## Three paths
 
 The original system dispatched a `mermaid-maker` or `svg-maker` subagent that rendered a PNG and *looked at it* before returning. Claude Code doesn't need the rendering pipeline — Obsidian renders mermaid natively, and SVG embeds directly — but it also doesn't get that free verification. So verification becomes an explicit step you own (see below).
 
@@ -44,13 +50,42 @@ Obsidian renders it natively; the terminal shows the source, which is fine.
 
 For **positions-and-shapes**: exact coordinates, geometry figures, number lines, vectors, plots, custom layouts that Mermaid's auto-layout can't express.
 
-Write the SVG by hand (or with a diagram skill if you have one), then save it into `<vault>/StudyVault/viz/viz-<slug>-<unix-timestamp>.svg` and embed it by filename:
+Use the `diagram-maker` skill to author it, then save the `.svg` into `<vault>/StudyVault/viz\viz-<slug>-<unix-timestamp>.svg` and embed it by filename:
 
 ```markdown
 ![[viz-triangle-similarity-1756137600.svg|500]]
 ```
 
 Unique timestamped filenames keep Obsidian's by-filename embed resolution unambiguous.
+
+### Path C — interactive explorable (HTML, 3Blue1Brown style)
+
+For the idea where **watching something change** delivers the click: a quantity that depends on others, a process that unfolds step by step, a mechanism with a dial on it. The learner is strongly visual, so every lesson on a new subject gets at least one of these.
+
+**Start from the template:** `~/.claude/skills/visualize/templates/explorable.html` (a finished, tested explorer for trading expectancy). Copy it, keep the engine and runtime sections, and rewrite only the `scenes` array and the `<h1>`/`<title>`. Save to `<vault>/StudyVault/viz\viz-<slug>-<unix-timestamp>.html` and link it from the lesson (not embed):
+
+```markdown
+> [!example] Interactive — <what it shows>
+> [[viz-<slug>-<ts>.html|▶ Open the explorable]] — predict first, then play.
+```
+
+It opens inside Obsidian via the **HTML Reader-plus** plugin (sandboxed web view, scripts run). In the browser it works too.
+
+**The 3B1B rules — what makes it high quality:**
+
+1. **Scenes, not a dashboard.** 2–4 scenes, one idea each, in the order *hook → build → generalise*. Scene 1 is a concrete surprising case; the last scene is the general law.
+2. **Predict before reveal — always.** Each scene poses a prediction question; the learner types it **in chat** (it's a graded quiz there, see `teach/references/quiz.md`), then clicks Reveal. Sliders stay locked until after the reveal — play comes after commitment.
+3. **Show the mechanism geometrically.** Find the picture where the formula *is* the shape (expectancy = net area; a derivative = a slope you can see; a probability = a fraction of a region). If the visual is just a chart of a formula's output, dig for the geometric version.
+4. **Colour = meaning, consistently.** Dark canvas; blue `#58c4dd` for the main object, yellow `#ffd95a` for the thing under attention, green `#83c167` / red `#fc6255` for good/bad or +/−. One colour never means two things.
+5. **Smooth, purposeful motion.** Animate transformations with the eased `tween` (≈1–4 s), never jump-cut the key change. Motion shows *what changed into what*; no decorative animation.
+6. **Continuous parameters.** After the reveal, give 1–2 sliders (or drag handles) on the variables that matter, with live numbers. Feeling the dependency with your hands is the point.
+7. **Minimal text, math in KaTeX.** Narration ≤ 3 short sentences per scene; the insight card states the law in one line of LaTeX plus one sentence of meaning.
+8. **Self-contained.** Everything inline except KaTeX from jsdelivr (degrades to raw `$…$` offline). No other network calls.
+
+**Verify before linking — mandatory:**
+
+- Every number in narration and insight is recomputed, not eyeballed (the template's claims — $+5R$, $+40R$, $w = 1/(1+R)$, 66.7% — were each checked by hand).
+- Run it headless and look at it: the scratchpad test pattern is `puppeteer-core` driving Brave (`C:/Program Files/BraveSoftware/Brave-Browser/Application/brave.exe`), clicking Reveal on every scene, collecting `pageerror`/console errors, and screenshotting each scene. Read the screenshots. Zero JS errors and every scene legible, or it doesn't ship.
 
 ## One idea, fewest elements
 
