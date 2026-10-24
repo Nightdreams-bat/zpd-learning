@@ -1,4 +1,4 @@
-import { modelCatalog } from "@/src/server";
+import { modelCatalog, warmLocalEngines } from "@/src/server";
 
 /**
  * The model picker's data (model-control wave): pi-ai's configured-provider
@@ -7,5 +7,7 @@ import { modelCatalog } from "@/src/server";
  * catalog: no network, stable within a pi-ai version.
  */
 export async function GET() {
+	// Someone is about to pick or use a model: have the local CLI processes ready.
+	warmLocalEngines();
 	return Response.json(modelCatalog());
 }

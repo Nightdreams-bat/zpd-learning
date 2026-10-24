@@ -8,6 +8,14 @@
 
 <p align="center"><strong>An agent harness for learning.</strong></p>
 
+> **Fork: run it on your Claude subscription (no API key).** This fork adds a `claude-cli` provider that answers by driving your own installed [Claude Code](https://claude.com/claude-code) CLI (`claude -p`). Log in to Claude Code once, then pick *Claude Opus/Sonnet/Haiku (subscription)* in Settings → Models.
+> Run it with `start-learnharness.cmd` (Windows; `npm run build && npm start` elsewhere).
+> - Speed: idle CLI processes are kept warm, and the transcript is sent as one block per message so the API prompt cache serves the history.
+> - Thinking levels map to `claude --effort`; Haiku answers are re-asked of Sonnet if a tool call is unusable.
+> - Unofficial and personal-use oriented: it relies on the CLI's headless mode, and Anthropic's terms for subscription use apply. Code: `src/agent/claude-cli-*.ts`. Tests use a scripted fake CLI (`tests/fixtures/fake-claude.mjs`).
+> - Licensed AGPL-3.0 like upstream ([amosblomqvist/learnharness](https://github.com/amosblomqvist/learnharness)).
+
+
 <p align="center">
   <a href="https://learnharness.ai">Download</a> ·
   <a href="#how-it-works">How it works</a> ·

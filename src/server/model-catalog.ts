@@ -19,7 +19,8 @@
 
 import { clampThinkingLevel, getSupportedThinkingLevels, type Api, type Model } from "@earendil-works/pi-ai";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { piModels } from "../agent/models.ts";
+import { piEngineForSpec, piModels } from "../agent/models.ts";
+import { CLAUDE_CLI_PROVIDER_ID, warmClaudeCli } from "../agent/claude-cli-provider.ts";
 import { settingsStore } from "../store/settings.ts";
 import { effectiveSettings } from "./stores.ts";
 import { keyValue } from "./keys.ts";
@@ -33,7 +34,7 @@ import type {
 	SlotPins,
 } from "../core/contracts/models.ts";
 import type { EffectiveModelSpec, EffectiveSlot } from "../core/settings-resolution.ts";
-import { AUTH_PROVIDER_KEYS } from "../core/auth-keys.ts";
+import { ALL_PROVIDER_KEYS } from "../core/auth-keys.ts";
 import { BACKGROUND_MODEL_ROLES, MODEL_SLOTS, type BackgroundModelRole, type ModelSlotName, type ModelsSettings } from "../core/settings.ts";
 
 /** The picker's client-safe model entry (contract: core/contracts/models.ts). */
@@ -121,7 +122,7 @@ export function catalogSlots(): SlotPins {
  *  with keyPresent read env-wins through the keys seam, fresh per call —
  *  saving a key immediately federates the provider into the picker. */
 export function catalogProviders(): CatalogProvider[] {
-	return AUTH_PROVIDER_KEYS.map((p) => ({
+	return ALL_PROVIDER_KEYS.map((p) => ({
 		id: p.id,
 		envVar: p.envVar,
 		keyPresent: keyValue(p.envVar) !== undefined,
@@ -300,4 +301,29 @@ export function clampChatLevel(settings: ChatSettings, strong: EffectiveSlot | n
 	const id = settings.model?.id ?? strong?.id;
 	if (!provider || !id) return settings;
 	return { ...settings, thinkingLevel: clampLevelFor(provider, id, settings.thinkingLevel) };
+}
+
+/**
+ * Park a local `claude` process for each tier that runs on the claude-cli
+ * provider (strong = the teacher, cheap = the background agents), so the
+ * learner's first message does not pay the ~0.85 s CLI startup. Called when
+ * the picker's catalog is read — i.e. whenever a page that can start a
+ * session loads — and idempotent: a process already parked is left alone.
+ * The level is resolved exactly as the engine will (an unset level means
+ * the baked default), so the parked process matches the call that claims it.
+ * An optimization only: it never throws and never blocks the request.
+ */
+export function warmLocalEngines(): void {
+	try {
+		const slots = effectiveSettings().models;
+		const specs: Array<{ id: string; level?: string }> = [];
+		for (const slot of [slots.strong, slots.cheap]) {
+			if (slot?.provider !== CLAUDE_CLI_PROVIDER_ID) continue;
+			const { level } = piEngineForSpec({ provider: slot.provider, id: slot.id, ...(slot.thinkingLevel ? { thinkingLevel: slot.thinkingLevel } : {}) });
+			specs.push({ id: slot.id, ...(level ? { level } : {}) });
+		}
+		if (specs.length > 0) warmClaudeCli(specs);
+	} catch {
+		/* warming is best-effort */
+	}
 }

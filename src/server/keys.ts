@@ -42,6 +42,8 @@
 import {
 	AUTH_KEYS,
 	AUTH_PROVIDER_KEYS,
+	ALL_PROVIDER_KEYS,
+	LOCAL_PROVIDER_KEYS,
 	AUTH_PROVIDER_ENV_VARS,
 	type AuthKeyInfo,
 	type AuthKeyStatus,
@@ -52,6 +54,7 @@ import {
 	validateKeyShape,
 } from "../core/auth-keys.ts";
 import { authStore } from "../store/auth.ts";
+import { claudeCliInstalled } from "../agent/claude-cli-provider.ts";
 
 // The once-per-process boot record — globalThis anchor (HMR re-imports the
 // module; the snapshot must not re-run and misread fill-gapped vars as real
@@ -82,7 +85,8 @@ export function isWritableAuthKey(id: string): boolean {
  *  in core/auth-keys.ts and tests/auth-provider-keys.test.ts). Sorted by
  *  id for a stable payload. */
 export function providerKeyList() {
-	return [...AUTH_PROVIDER_KEYS].sort((a, b) => a.id.localeCompare(b.id));
+	const rows = claudeCliInstalled() ? [...AUTH_PROVIDER_KEYS, ...LOCAL_PROVIDER_KEYS] : [...AUTH_PROVIDER_KEYS];
+	return rows.sort((a, b) => a.id.localeCompare(b.id));
 }
 
 /** The fresh-user switch (owner, interlude 2026-09-22): env keys are
@@ -178,7 +182,12 @@ export function resolveKeyStatuses(
 
 /** The GET view: every curated key (present or not) + unknown file vars. */
 export function keyStatuses(): AuthKeyStatus[] {
-	return resolveKeyStatuses(authStore.authVars(), process.env, boot().realEnv, AUTH_PROVIDER_ENV_VARS);
+	const rows = resolveKeyStatuses(authStore.authVars(), process.env, boot().realEnv, AUTH_PROVIDER_ENV_VARS);
+	// The local claude CLI counts as a present provider "key" so the zero-keys gate opens.
+	if (claudeCliInstalled()) {
+		rows.push({ id: "CLAUDE_CLI_LOCAL", info: null, present: true, masked: "local claude CLI", source: "env", shadowedByEnv: false });
+	}
+	return rows;
 }
 
 /** The live value for one var, env-first (the env-wins rule) — the canonical
@@ -186,6 +195,8 @@ export function keyStatuses(): AuthKeyStatus[] {
  *  STT route was the one cold-boot hole: a first-ever request to it would
  *  otherwise read env before any fill-gap ran). */
 export function keyValue(id: string): string | undefined {
+	// Not a secret: the claude-cli provider is "keyed" when the CLI is installed.
+	if (id === "CLAUDE_CLI_LOCAL") return claudeCliInstalled() ? "local" : undefined;
 	// The fresh-user switch: ONLY the file store counts (belt-and-
 	// suspenders — the boot deletion already emptied the env; this guards
 	// any env key reintroduced after boot).
@@ -200,7 +211,7 @@ export function keyValue(id: string): string | undefined {
  * (gate by what would run). Providers absent from AUTH_PROVIDER_KEYS take
  * no key at all: nothing to gate, present by definition. */
 export function providerKeyPresent(provider: string): boolean {
-	const info = AUTH_PROVIDER_KEYS.find((p) => p.id === provider);
+	const info = ALL_PROVIDER_KEYS.find((p) => p.id === provider);
 	return info ? keyValue(info.envVar) !== undefined : true;
 }
 

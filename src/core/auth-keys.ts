@@ -122,6 +122,17 @@ export const AUTH_PROVIDER_KEYS: readonly AuthProviderInfo[] = [
 	{ id: "zai-coding-cn", envVar: "ZAI_CODING_CN_API_KEY", label: "Z.AI Coding CN" },
 ] as const;
 
+/** Providers that run on this machine and take no key (claude-cli: the
+ *  user's own `claude` login). Kept OUT of AUTH_PROVIDER_KEYS so that table
+ *  stays an exact mirror of pi-ai (tests/auth-provider-keys.test.ts). The
+ *  env var is a presence flag the keys seam synthesizes — never writable. */
+export const LOCAL_PROVIDER_KEYS: readonly AuthProviderInfo[] = [
+	{ id: "claude-cli", envVar: "CLAUDE_CLI_LOCAL", label: "Claude Code (subscription)" },
+] as const;
+
+/** Every provider the picker can federate: pi-ai's keyed ones + the local ones. */
+export const ALL_PROVIDER_KEYS: readonly AuthProviderInfo[] = [...AUTH_PROVIDER_KEYS, ...LOCAL_PROVIDER_KEYS];
+
 /** Every distinct env var a model-provider key rides in (the write side's
  *  writability check — see isProviderEnvVar below; also drives which
  *  PRESENT provider vars surface as status rows). */
