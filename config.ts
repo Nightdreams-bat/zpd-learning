@@ -1,3 +1,4 @@
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -14,9 +15,15 @@ export const ROOT = path.dirname(fileURLToPath(import.meta.url));
  * byte-for-byte as before. Read-only assets (prompts) stay ROOT-anchored
  * on purpose: they ship inside the app bundle by design.
  */
+// Fork guard: several upstream tests import the stores without setting
+// LH_DATA_DIR, so under NODE_ENV=test they wrote fixture sessions ("Fixture
+// mixed queue", "steer: idle", …) into the real data/ and the sidebar filled
+// with junk. Tests get a per-process temp root instead.
 const DATA_ROOT = process.env.LH_DATA_DIR
 	? path.resolve(process.env.LH_DATA_DIR)
-	: path.join(ROOT, "data");
+	: process.env.NODE_ENV === "test"
+		? path.join(os.tmpdir(), `lh-test-data-${process.pid}`)
+		: path.join(ROOT, "data");
 
 export const PATHS = {
 	root: ROOT,
