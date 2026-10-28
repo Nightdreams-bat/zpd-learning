@@ -15,12 +15,11 @@
  * its own save), the same re-read pattern chat.tsx uses for "models".
  */
 
-import { useCallback, useEffect, useState } from "react";
-import type { AuthKeyStatus } from "@/src/core";
+import { useEffect, useState } from "react";
+import { MODEL_SLOTS, type AuthKeyStatus } from "@/src/core";
 import { classifyKeys, type ProviderKeyInfo } from "@/components/settings/keys-section";
-import { useModelCatalog } from "@/components/model-picker";
+import { useModelCatalog } from "@/components/model-catalog";
 import type { ModelCatalogResponse } from "@/src/core";
-import { useSettingsSaved } from "@/components/settings-signal";
 
 /** Pure: does a MODEL-PROVIDER key exist among the statuses? Reuses
  *  classifyKeys (the keys section's own classification — no drift):
@@ -34,28 +33,41 @@ export function hasProviderKey(
 	return classifyKeys(statuses, providers).providerRows.some((s) => s.present);
 }
 
+/** Completeness is saved identity, not current provider availability. */
+export function savedSlotsConfigured(slots: ModelCatalogResponse["slots"] | undefined): boolean {
+	return MODEL_SLOTS.every((slot) => !!slots?.[slot]?.model);
+}
+
+/** Keep the last known completeness during connection invalidation, but
+ * follow ordinary slot repairs as soon as their shared snapshot arrives. */
+export function useModelSetup(initialConfigured: boolean) {
+	const { catalog } = useModelCatalog();
+	const [lastConfigured, setLastConfigured] = useState(initialConfigured);
+	const configured = catalog ? savedSlotsConfigured(catalog.slots) : lastConfigured;
+	useEffect(() => { if (catalog) setLastConfigured(savedSlotsConfigured(catalog.slots)); }, [catalog]);
+	return { catalog, configured, zeroKeys: catalog ? !catalog.providers.some((p) => p.keyPresent) : false };
+}
+
+/** A known unavailable route needs an explicit replacement, never an
+ * automatic provider/model substitution. Unknown metadata defers to the
+ * server's admission gate instead of declaring a route disconnected. */
+export function selectedModelUnavailable(catalog: ModelCatalogResponse | undefined, selected: string | undefined): boolean {
+	return !!catalog && !!selected && !catalog.models.some((m) => `${m.provider}:${m.id}` === selected);
+}
+
+/** Reuse the ordinary control (also opened by the existing keyboard action). */
+export function openModelPicker(): void {
+	window.dispatchEvent(new CustomEvent("lh:kbd-open-model-picker"));
+}
+
 /** The zero-keys truth for the calling page: TRUE only after a
  *  successful read says no provider key exists (pending and failed
  *  reads render nothing — the pill must never flash on a gap, and a
  *  failed read claiming "zero keys" would be a lie the CTA flow then
  *  leans on). Re-reads on the keys signal. */
 export function useZeroKeys(): boolean {
-	const [zeroKeys, setZeroKeys] = useState(false);
-	const read = useCallback(() => {
-		fetch("/api/keys")
-			.then((r) => r.json())
-			.then((body: { keys?: AuthKeyStatus[]; providers?: ProviderKeyInfo[] }) => {
-				setZeroKeys(!hasProviderKey(body.keys ?? [], body.providers));
-			})
-			.catch(() => {});
-	}, []);
-	useEffect(() => {
-		read();
-	}, [read]);
-	useSettingsSaved((section) => {
-		if (section === "keys") read();
-	});
-	return zeroKeys;
+	const { catalog } = useModelCatalog();
+	return catalog ? !catalog.providers.some((provider) => provider.keyPresent) : false;
 }
 
 /** The pill itself — the models CTA's chrome and placement, the keys
@@ -93,9 +105,6 @@ export function strongKeyless(catalog: ModelCatalogResponse | undefined): boolea
  *  (a provider key saved or deleted) and "models" (the strong slot
  *  re-pinned). Live-updates with the page, never mid-send. */
 export function useStrongKeyless(): boolean {
-	const { catalog, refresh } = useModelCatalog();
-	useSettingsSaved((section) => {
-		if (section === "keys" || section === "models") refresh();
-	});
+	const { catalog } = useModelCatalog();
 	return strongKeyless(catalog);
 }

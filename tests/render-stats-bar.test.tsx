@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { StatsBar } from "../components/stats-bar.tsx";
+import { StatsBar, formatContextMeasurement } from "../components/stats-bar.tsx";
+import { sessionCost } from "../src/server/pricing.ts";
 import { catalogLimits } from "../components/model-picker.tsx";
 import type { ModelCatalogEntry, ModelCatalogResponse } from "../src/core/contracts.ts";
 import { prettyModel } from "../components/usage-format.ts";
@@ -50,7 +51,7 @@ describe("stats bar", () => {
 
 	it("folds context + cost from the turns log (core/prices, no local math)", () => {
 		const html = renderToStaticMarkup(
-			<StatsBar turns={[turn(), turn()]} />,
+			<StatsBar turns={[turn(), turn()]} contextTokens={11_000} pricing={sessionCost({ turns: [turn(), turn()] })} />,
 		);
 		// last turn's last call: 10k in + 1k out = 11k. The LIMIT is the
 		// live catalog's — and the bar doesn't hold the index yet (the
@@ -68,7 +69,7 @@ describe("stats bar", () => {
 
 	it("shows — for cost when every turn is unpriceable, never a fake $0", () => {
 		const html = renderToStaticMarkup(
-			<StatsBar turns={[turn({ model: "nope/unknown" })]} />,
+			<StatsBar turns={[turn({ model: "nope/unknown" })]} contextTokens={11_000} pricing={sessionCost({ turns: [turn({ model: "nope/unknown" })] })} />,
 		);
 		assert.match(html, /data-testid="stats-cost">—</);
 		// unknown model: no catalog limit exists, but the footprint is
@@ -77,9 +78,26 @@ describe("stats bar", () => {
 		assert.match(html, /data-testid="stats-context">11k</);
 	});
 
-	it("prettyModel strips vendor + date suffix, keeps dashes", () => {
+	it("unknown context is explicit; changing the selected limit preserves the measurement", () => {
+		assert.equal(formatContextMeasurement(null, 100_000), "? / 100k");
+		assert.equal(formatContextMeasurement(83_000, 100_000), "83k / 100k");
+		assert.equal(formatContextMeasurement(83_000, 200_000), "83k / 200k");
+		assert.equal(formatContextMeasurement(83_000, null), "83k");
+		const html = renderToStaticMarkup(<StatsBar chatId="fixture" turns={[turn()]} contextTokens={null} />);
+		assert.match(html, /data-testid="stats-context">\?</);
+		const empty = renderToStaticMarkup(<StatsBar chatId="fixture" turns={[]} />);
+		assert.match(empty, /data-testid="stats-context">\?</);
+	});
+
+	it("prettyModel strips only the vendor path, preserving versions, dates and variants", () => {
 		assert.equal(prettyModel("z-ai/glm-5.3-flash"), "glm-5.3-flash"); // dashes kept (owner round 5)
-		assert.equal(prettyModel("qwen/qwen3.8-max-0902"), "qwen3.8-max");
+		assert.equal(prettyModel("qwen/qwen3.8-max-0902"), "qwen3.8-max-0902");
+		assert.equal(prettyModel("google/gemma-4-27b-it:free"), "gemma-4-27b-it:free");
+		assert.equal(prettyModel("anthropic/claude-opus-5:batch"), "claude-opus-5:batch");
+		assert.equal(prettyModel("claude-opus-5"), "claude-opus-5");
+		assert.equal(prettyModel("claude-opus-5-5"), "claude-opus-5-5");
+		assert.equal(prettyModel("model:free"), "model:free");
+		assert.equal(prettyModel("model:variant:free"), "model:variant:free");
 	});
 
 	it("provider-qualified stamps (usage contract, model-slots wave)", () => {
@@ -87,8 +105,10 @@ describe("stats bar", () => {
 		// the same model via two providers different bookkeeping
 		assert.equal(prettyModel("openrouter:z-ai/glm-5.3-flash", true), "glm-5.3-flash · openrouter");
 		assert.equal(prettyModel("openai:gpt-5.2", true), "gpt-5.2 · openai");
-		// unqualified on a qualified stamp: provider silently dropped (old shape)
-		assert.equal(prettyModel("openrouter:z-ai/glm-5.3-flash"), "glm-5.3-flash");
+		assert.equal(prettyModel("openrouter:google/gemma-4-27b-it:free", true), "gemma-4-27b-it:free · openrouter");
+		assert.equal(prettyModel("opencode:claude-opus-5-5", true), "claude-opus-5-5 · opencode");
+		// Bare ids are never parsed as usage stamps, even with a colon.
+		assert.equal(prettyModel("model:free"), "model:free");
 		// qualified on a bare id: no suffix invented
 		assert.equal(prettyModel("z-ai/glm-5.3-flash", true), "glm-5.3-flash");
 	});

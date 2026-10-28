@@ -125,7 +125,7 @@ describe("notes files as birth sessions", () => {
 		assert.deepEqual(index, [
 			{
 				id: "src_abc",
-				name: "/vault/learn vim.md",
+				name: "learn vim",
 				kind: "file",
 				createdAt: "2026-09-22T00:00:00.000Z",
 				updatedAt: "2026-09-22T00:00:00.000Z",
@@ -169,9 +169,9 @@ describe("graphSnapshot birth-session clusters", () => {
 			label: "Learning session",
 			members: ["a", "b", "c"],
 		});
-		assert.deepEqual(byLabel.get("/vault/notes.md"), {
+		assert.deepEqual(byLabel.get("notes"), {
 			id: "src_notes",
-			label: "/vault/notes.md",
+			label: "notes",
 			members: ["d", "e", "f"],
 		}, "a notes file is a birth-session too (owner ruling)");
 		// A 2-proposition session renders no hull (the presentation rule).
@@ -211,7 +211,7 @@ describe("graphSessionIndex (the prober's session list)", () => {
 		assert.deepEqual(index, [
 			{
 				id: "src_notes",
-				name: "/vault/notes.md",
+				name: "notes",
 				kind: "file",
 				createdAt: "2026-09-22T00:00:00.000Z",
 				updatedAt: "2026-09-22T00:00:00.000Z",

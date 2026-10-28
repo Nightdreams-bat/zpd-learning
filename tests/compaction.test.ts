@@ -156,7 +156,7 @@ describe("compactionCutIndex", () => {
 		assert.equal((messages[cut] as { content: string }).content.startsWith("m2"), true, "the oldest kept message sits at the cut");
 	});
 
-	it("NEVER separates a tool result from its call — the cut extends to the call's assistant message", () => {
+	it("native cut after an oversized result drops both call and result, never keeps an orphan", () => {
 		const messages = [
 			big("m1"),
 			big("m2"),
@@ -165,13 +165,13 @@ describe("compactionCutIndex", () => {
 			big("m3"),
 			big("m4"),
 		];
-		// Budget lands such that the naive stop is ON the toolResult (m2 kept,
-		// result next): the walk must extend to a1's assistant message.
+		// Budget lands on the result. Pi chooses the next valid cut AT OR
+		// AFTER it, dropping the complete exchange rather than extending.
 		const cut = compactionCutIndex(messages, estimateTokens([big("m3"), big("m4")]) + 1);
-		assert.ok(cut <= 2, `the cut must not sit between the call (idx 2) and its result (idx 3) — got ${cut}`);
-		const kept = messages.slice(cut);
-		const keptIds = new Set(kept.map((m) => m.id));
-		assert.ok(keptIds.has("a1") && keptIds.has("r_call_1"), "call and result stay together");
+		assert.equal(cut, 4);
+		const keptIds = new Set(messages.slice(cut).map((m) => m.id));
+		assert.equal(keptIds.has("a1"), false);
+		assert.equal(keptIds.has("r_call_1"), false);
 	});
 
 	it("a PENDING question call (no result — the pose→answer window) always survives", () => {
@@ -181,7 +181,7 @@ describe("compactionCutIndex", () => {
 		assert.ok(kept.some((m) => m.id === "a_pending"), "the pending pose is never dropped");
 	});
 
-	it("zero budget summarizes everything; whole-history-in-budget returns 0 only when nothing precedes", () => {
+	it("whole history within budget keeps everything (zero cut)", () => {
 		assert.equal(compactionCutIndex([newUserMessage("hi")], 100), 0);
 	});
 });
@@ -256,6 +256,22 @@ describe("toLlmMessages honors the cut", () => {
 		assert.equal(JSON.stringify(out).indexOf("COMPACTED]"), JSON.stringify(out).lastIndexOf("COMPACTED]"), "header appears exactly once");
 	});
 
+	it("omits nine superseded summaries inside the retained tail without changing stored history", () => {
+		const kept = newUserMessage("retained exchange");
+		const details = { firstKeptMessageId: kept.id, tokensBefore: 200_000, at: "fixture" };
+		const old = Array.from({ length: 9 }, (_, i) => newCompactionMarker(`SUPERSEDED-${i}`, details));
+		const fresh = newCompactionMarker("LATEST SUMMARY", details);
+		const messages = [newUserMessage("discarded"), kept, ...old, newUserMessage("latest reply"), fresh];
+		const original = JSON.stringify(messages);
+		const out = toLlmMessages(messages);
+		const flat = JSON.stringify(out);
+		assert.equal(out.length, 3, "latest summary + retained exchange + latest reply");
+		assert.ok(flat.includes("LATEST SUMMARY"));
+		assert.ok(!flat.includes("SUPERSEDED-"));
+		assert.equal(flat.split(COMPACTED_HISTORY_HEADER).length - 1, 1);
+		assert.equal(JSON.stringify(messages), original, "projection never rewrites the record");
+	});
+
 	it("a pending (dangling) question call in the KEPT tail still gets the interrupted synthesis", () => {
 		const kept = [assistantWithCall("a1", "call_1")];
 		const marker = newCompactionMarker("S", { firstKeptMessageId: "a1", tokensBefore: 1, at: "t" });
@@ -268,6 +284,22 @@ describe("toLlmMessages honors the cut", () => {
 		const marker = newCompactionMarker("S", { firstKeptMessageId: "zzz", tokensBefore: 1, at: "t" });
 		const out = toLlmMessages([newUserMessage("a"), marker, newUserMessage("b")] as never);
 		assert.equal(out.length, 3, "no head swap — all three render (marker as its user text)");
+	});
+
+	it("an unresolved newest cutoff preserves the full-history fallback, including summary text", () => {
+		const kept = newUserMessage("retained exchange");
+		const old = newCompactionMarker("OLD SUMMARY", { firstKeptMessageId: kept.id, tokensBefore: 1, at: "fixture" });
+		const fresh = newCompactionMarker("LATEST SUMMARY", { firstKeptMessageId: "missing", tokensBefore: 2, at: "fixture" });
+		const messages = [newUserMessage("earliest exchange"), kept, old, newUserMessage("latest reply"), fresh];
+		const original = JSON.stringify(messages);
+		const out = toLlmMessages(messages);
+		assert.equal(out.length, messages.length);
+		assert.equal(out[0]!.content, "earliest exchange", "do not silently apply the older cutoff");
+		const flat = JSON.stringify(out);
+		assert.ok(flat.includes("OLD SUMMARY"));
+		assert.ok(flat.includes("LATEST SUMMARY"));
+		assert.equal(flat.split(COMPACTED_HISTORY_HEADER).length - 1, 2);
+		assert.equal(JSON.stringify(messages), original);
 	});
 
 	it("chained compaction: the newest marker's cut wins; the older marker falls in the dropped span", () => {
@@ -301,6 +333,11 @@ describe("serializeForSummary + buildCompactionPrompt", () => {
 		assert.ok(text.includes("…[truncated]"));
 		assert.ok(!text.includes("yyyyy".repeat(1000)), "truncation bounded the result");
 		assert.ok(!text.toLowerCase().includes("plan-block"), "UI-only markers never serialize");
+	});
+
+	it("preserves legacy summary text when the caller has no separately supplied prior summary", () => {
+		const marker = newCompactionMarker("LEGACY SUMMARY", { firstKeptMessageId: "missing", tokensBefore: 1, at: "fixture" });
+		assert.ok(serializeForSummary([marker]).includes("LEGACY SUMMARY"));
 	});
 
 	it("the prompt demands the four sections in order and carries the plan tree verbatim", () => {
@@ -388,6 +425,11 @@ describe("toLlmMessages carries the leading system message (request chrome)", ()
 	const record = (): LhMessage[] => [
 		{ id: "old", role: "user", content: "dropped history", timestamp: 1 },
 		{ id: "kept", role: "user", content: "kept tail", timestamp: 2 },
+		newCompactionMarker("SUPERSEDED SUMMARY", {
+			firstKeptMessageId: "kept",
+			tokensBefore: 98,
+			at: new Date(0).toISOString(),
+		}),
 		newCompactionMarker("SUMMARY", {
 			firstKeptMessageId: "kept",
 			tokensBefore: 99,
@@ -407,6 +449,8 @@ describe("toLlmMessages carries the leading system message (request chrome)", ()
 				: ((m.content as { text?: string }[])[0]?.text ?? "");
 		assert.ok(out.slice(2).some((m) => m.role === "user" && textOf(m) === "kept tail"));
 		assert.ok(!out.some((m) => m.role === "user" && textOf(m) === "dropped history"));
+		assert.ok(!JSON.stringify(out).includes("SUPERSEDED SUMMARY"));
+		assert.equal(JSON.stringify(out).split(COMPACTED_HISTORY_HEADER).length - 1, 1);
 	});
 
 	it("without a cut the chrome renders EXACTLY ONCE (no duplicate)", () => {

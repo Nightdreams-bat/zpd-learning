@@ -69,7 +69,7 @@ async function subagentSummarizer(prompt: string, engine: PiEngine): Promise<{ s
 		totalTokens: 0,
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 	};
-	const { text } = await runSubagent([], {
+	const { text, newMessages } = await runSubagent([], {
 		// The engine override is always present (the chat's own conversation
 		// engine — owner ruling), so the role label never resolves an
 		// engine; "researcher" is the least-wrong existing ModelRole label
@@ -83,12 +83,20 @@ async function subagentSummarizer(prompt: string, engine: PiEngine): Promise<{ s
 			usage = u;
 		},
 	});
+	// A provider-declared incomplete response is not a usable checkpoint,
+	// even when it contains nonempty text. Match Pi's compaction failure
+	// semantics: leave the existing history and prior summary untouched.
+	if (newMessages.some((message) => message.role === "assistant" && message.stopReason === "length")) {
+		throw new Error("Compaction summary hit the output limit and is incomplete");
+	}
 	return { summary: text, usage };
 }
 
 /** Everything the service needs from its host (chat-handler wires the
  *  production versions; tests inject). */
 export interface CompactionDeps {
+	/** Eligibility only for NEW runs; structural waits still apply. */
+	canStart?: () => boolean;
 	chatStore: ChatStore;
 	/** The chat's conversation engine — also the summarizer's. */
 	engine: PiEngine;
@@ -173,7 +181,7 @@ async function compact(deps: CompactionDeps, chatId: string): Promise<void> {
 	if (tokensBefore <= deps.thresholdTokens) return; // settled beneath while we waited
 
 	const cut = compactionCutIndex(messages);
-	if (cut >= messages.length) return; // nothing to drop (defensive)
+	if (cut <= 0 || cut >= messages.length) return; // no history can be dropped
 
 	// The previous compaction's kept boundary (chained compactions
 	// summarize the old summary + what rode after it).
@@ -199,7 +207,14 @@ async function compact(deps: CompactionDeps, chatId: string): Promise<void> {
 		spanStart = prevKept;
 		priorSummary = previous.content;
 	}
-	const spanText = serializeForSummary(messages.slice(spanStart, cut));
+	const span = messages.slice(spanStart, cut);
+	// The separately supplied prior summary replaces all summary markers
+	// in this span. Without a resolved prior boundary, retain the existing
+	// legacy fallback rather than silently discarding summary-only context.
+	const summaryMessages = priorSummary
+		? span.filter((m) => m.role !== "custom" || m.customType !== "compaction")
+		: span;
+	const spanText = serializeForSummary(summaryMessages);
 	const fullSpan = priorSummary ? `[SYSTEM NOTE — prior compaction summary, still authoritative where not superseded]\n${priorSummary}\n\n${spanText}` : spanText;
 
 	const prompt = buildCompactionPrompt({
@@ -238,6 +253,7 @@ async function compact(deps: CompactionDeps, chatId: string): Promise<void> {
 					outputTokens: usage.output,
 					cacheReadTokens: usage.cacheRead,
 					cacheWriteTokens: usage.cacheWrite,
+					cacheWrite1hTokens: usage.cacheWrite1h ?? 0,
 					reasoningTokens: usage.reasoning ?? 0,
 				},
 			],
@@ -267,6 +283,7 @@ export async function ensureCompacted(deps: CompactionDeps, chatId: string): Pro
 	// injected summarizer.
 	if (process.env.NODE_ENV === "test" && !deps.summarize) return;
 	await awaitCompaction(chatId);
+	if (deps.canStart?.() === false) return;
 	const record = deps.chatStore.getChat(chatId);
 	if (!record) return;
 	if (projectedContextTokens(record.messages, deps.systemPromptTokens) <= deps.thresholdTokens) return;
@@ -291,7 +308,7 @@ export async function ensureCompacted(deps: CompactionDeps, chatId: string): Pro
 export function kickCompaction(buildDeps: () => CompactionDeps | null, chatId: string): void {
 	if (state().inFlight.has(chatId)) return;
 	const deps = buildDeps();
-	if (!deps) return;
+	if (!deps || deps.canStart?.() === false) return;
 	const record = deps.chatStore.getChat(chatId);
 	if (!record) return;
 	if (projectedContextTokens(record.messages, deps.systemPromptTokens) <= deps.thresholdTokens) return;

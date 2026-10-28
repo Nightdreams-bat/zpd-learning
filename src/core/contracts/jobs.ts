@@ -21,6 +21,12 @@ export interface JobRecord {
 	chatId: string;
 	/** The tool part this job fulfills. */
 	toolCallId: string;
+	/** Dispatch-time arguments, saved before spawn. Older jobs resolve from history. */
+	input?: unknown;
+	/** Session-owned delivery, independent of the worker's terminal outcome.
+	 * Absent on legacy records: old terminal jobs must never be replayed. */
+	delivery?: { kind: "result" | "abort"; status: "pending" | "delivered" };
+	/** Worker computation only; a pending delivery does not keep it running. */
 	status: JobStatus;
 	/** Latest human-readable activity line, e.g. `web_search: "sigma.js v3"`. */
 	activity: string;
@@ -43,7 +49,7 @@ export interface JobRecord {
  * money-channel doctrine; cost renders "—", never $0). */
 export interface JobUsage {
 	/** The model that ran the sub-agent, provider-qualified ("provider:id" —
-	 *  model slots wave, 2026-09-20; matches PRICES' uniform keys). */
+	 *  model slots wave, 2026-09-20; matches Pi catalog lookup keys). */
 	model: string;
 	/** Running totals summed over the run's model calls so far. */
 	inputTokens: number | undefined;
@@ -51,6 +57,10 @@ export interface JobUsage {
 	cacheReadTokens: number | undefined;
 	cacheWriteTokens: number | undefined;
 	reasoningTokens: number | undefined;
+	cacheWrite1hTokens?: number;
+	/** Individual calls for current-catalog per-call tier pricing. Absent on
+	 * older jobs; never backfill them from cumulative totals. */
+	calls?: CallUsage[];
 	/** How many model calls the run has made (each bills separately). */
 	steps: number;
 	/** The MOST RECENT model call's accounting (2026-09 dock contract): the
@@ -67,7 +77,7 @@ export interface JobUsage {
  * object with these fields folds, including the real thing and test fakes). */
 export interface UsageStepLike {
 	inputTokens?: number | undefined;
-	inputTokenDetails?: { cacheReadTokens?: number; cacheWriteTokens?: number } | undefined;
+	inputTokenDetails?: { cacheReadTokens?: number; cacheWriteTokens?: number; cacheWrite1hTokens?: number } | undefined;
 	outputTokens?: number | undefined;
 	outputTokenDetails?: { reasoningTokens?: number } | undefined;
 }
@@ -80,12 +90,13 @@ export function piUsageToStep(usage: {
 	output: number;
 	cacheRead: number;
 	cacheWrite: number;
+	cacheWrite1h?: number;
 	reasoning?: number;
 }): UsageStepLike {
 	return {
 		inputTokens: usage.input,
 		outputTokens: usage.output,
-		inputTokenDetails: { cacheReadTokens: usage.cacheRead, cacheWriteTokens: usage.cacheWrite },
+		inputTokenDetails: { cacheReadTokens: usage.cacheRead, cacheWriteTokens: usage.cacheWrite, cacheWrite1hTokens: usage.cacheWrite1h ?? 0 },
 		outputTokenDetails: usage.reasoning !== undefined ? { reasoningTokens: usage.reasoning } : undefined,
 	};
 }
@@ -101,6 +112,14 @@ export function accumulateJobUsage(
 ): JobUsage {
 	const add = (a: number | undefined, b: number | undefined): number | undefined =>
 		a === undefined && b === undefined ? undefined : (a ?? 0) + (b ?? 0);
+	const call: CallUsage = {
+		inputTokens: step.inputTokens,
+		outputTokens: step.outputTokens,
+		cacheReadTokens: step.inputTokenDetails?.cacheReadTokens,
+		cacheWriteTokens: step.inputTokenDetails?.cacheWriteTokens,
+		cacheWrite1hTokens: step.inputTokenDetails?.cacheWrite1hTokens,
+		reasoningTokens: step.outputTokenDetails?.reasoningTokens,
+	};
 	return {
 		model,
 		inputTokens: add(total?.inputTokens, step.inputTokens),
@@ -108,14 +127,12 @@ export function accumulateJobUsage(
 		cacheReadTokens: add(total?.cacheReadTokens, step.inputTokenDetails?.cacheReadTokens),
 		cacheWriteTokens: add(total?.cacheWriteTokens, step.inputTokenDetails?.cacheWriteTokens),
 		reasoningTokens: add(total?.reasoningTokens, step.outputTokenDetails?.reasoningTokens),
+		cacheWrite1hTokens: ((total?.cacheWriteTokens ?? 0) > 0 && total?.cacheWrite1hTokens === undefined) ||
+			((call.cacheWriteTokens ?? 0) > 0 && call.cacheWrite1hTokens === undefined)
+			? undefined : add(total?.cacheWrite1hTokens, call.cacheWrite1hTokens),
 		steps: (total?.steps ?? 0) + 1,
-		lastStep: {
-			inputTokens: step.inputTokens,
-			outputTokens: step.outputTokens,
-			cacheReadTokens: step.inputTokenDetails?.cacheReadTokens,
-			cacheWriteTokens: step.inputTokenDetails?.cacheWriteTokens,
-			reasoningTokens: step.outputTokenDetails?.reasoningTokens,
-		},
+		...(!total || total.calls ? { calls: [...(total?.calls ?? []), call] } : {}),
+		lastStep: call,
 	};
 }
 
@@ -137,42 +154,32 @@ export function accumulateJobUsage(
  *     sourced briefs) — tracking a live activity line in the job record.
  *     ONE central client poll of GET /api/jobs?chatId=… (in Chat) drives every
  *     job surface: the transcript dispatch cards (live activity by
- *     toolCallId, quiet one-liner after delivery), the sub-agents sidebar
+ *     toolCallId, quiet one-liner after worker completion), the sub-agents sidebar
  *     panel, and the single re-sync when a job settles.
  *
- *  3. On completion the runner builds a STEER MESSAGE (buildSubagentSteer)
- *     and hands it to the wake pipeline (src/server/jobs.ts): a user-role
- *     result-carrying native marker — the content is what the MODEL needs
- *     (the research brief, the builder's notes), plus a data-subagent-artifact
- *     part with what the UI renders (the full result: brief + sources /
- *     SVG / demo HTML). Provider conversion drops data parts, so artifact
- *     payloads never enter the teacher's context. metadata.subagentResult
- *     identifies the job; the UI renders these as sub-agent result cards,
- *     NEVER as learner interjections.
+ *  3. Dispatch saves input on the job before spawn. On completion the
+ *     runner saves result + terminal worker status + pending delivery in
+ *     one job update, then queues buildSubagentSteer WITHOUT waiting for
+ *     delivery. The native custom marker's content is model-facing text;
+ *     details carry the full artifact payload for the UI. Worker resources
+ *     are released even if a question keeps the result pending indefinitely.
+ *     Only computing workers appear in Background agents or accept abort.
  *
- *  4. The wake pipeline delivers the steer by firing a SERVER-SIDE teacher
- *     turn through the same turn composition as a client request
- *     (handleChatRequest) — write-ahead persist, turn liveness, extraction
- *     trigger: one code path. A per-chat serialized queue: a steer waits
- *     while a turn is in flight OR a question tool part is pending (an
- *     unanswered client-side tool call breaks provider conversion — the
- *     steer fires right after the learner's continuation), then fires; a 409
- *     (a client turn raced in) retries. Delivery is idempotent per jobId, so
- *     a crashed wake can be re-entered by the stale-job recovery sweep. The
- *     job's status flips to done/error only AFTER the wake turn completes —
- *     a polling client that sees the flip re-syncs once and gets the
- *     finished record.
+ *  4. Session delivery owns one registry entry per deterministic steer ID,
+ *     including while a wake is in flight or a 409/403 returns its cargo.
+ *     A live agent takes it via pi steering; registration restores saved
+ *     pending jobs before the answer run's first poll. Otherwise the idle
+ *     wake uses the normal turn composition and respects pending questions,
+ *     dismissal, and background consent. A saved transcript marker completes
+ *     delivery; HTTP 200 or streamed visibility alone does not.
  *
- *     CONTINUATION COALESCING: the idle window above can starve — a
- *     quiz-chaining teacher ends every turn with a new pending check, so
- *     the gates never stay open long enough for a wake to fire. The fix:
- *     when a client turn wins the turn registry, the handler CLAIMS every
- *     queued, undelivered steer (jobs.ts claimSteers) and appends it after
- *     the learner's answer in that very turn — conversion-safe, because the
- *     answered quiz carries its output. Every answer flushes pending
- *     steers immediately; the wake pump remains for turns that end with no
- *     pending question. The pump re-checks steerDelivered right before
- *     firing, so a claim racing the pump converges to exactly one delivery.
+ *     Failed starts remain quietly pending until a learner run or restart
+ *     recovery, without new timers, visible delivery errors, or worker-status
+ *     changes. Existing 409 backoff and consent deferral remain. Accepted
+ *     turns are never automatically replayed. Legacy running records with a
+ *     result become finished/pending; legacy terminal records with no
+ *     delivery metadata remain untouched. Session deletion discards pending
+ *     deliveries rather than treating them as running work.
  *
  *  5. No pending job parts ever exist, so the composer never gates on jobs
  *     (the learner can interject mid-job; the steer queues behind their
