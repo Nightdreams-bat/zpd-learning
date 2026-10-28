@@ -128,6 +128,9 @@ describe("parseAppearanceSettingsBody", () => {
 			{ proseFontSize: 30 },
 			{ proseFontSize: 64.5 },
 			{ sessionNameSerif: 1 },
+			{ theme: "glass" },
+			{ glassAmount: 101 },
+			{ glassAmount: 12.5 },
 			{ mdRendering: { headingWeight: 1000 } },
 			{ mdRendering: { boldColor: "red" } },
 		];
@@ -135,6 +138,10 @@ describe("parseAppearanceSettingsBody", () => {
 			assert.equal(parseAppearanceSettingsBody(body).ok, false, JSON.stringify(body));
 		}
 		// boundary values that MUST pass: 12 and 24, 100 and 900, #fff
+		assert.deepEqual(parseAppearanceSettingsBody({ theme: "graphite-frost", glassAmount: 0 }), {
+			ok: true,
+			settings: { theme: "graphite-frost", glassAmount: 0 },
+		});
 		assert.ok(parseAppearanceSettingsBody({ proseFontSize: 12 }));
 		assert.ok(parseAppearanceSettingsBody({ proseFontSize: 24 }));
 		assert.ok(parseAppearanceSettingsBody({ mdRendering: { headingWeight: 100 } }));

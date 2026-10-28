@@ -16,6 +16,7 @@ import { isHexColor, type ChatSettings } from "../core";
 import type {
 	AgentSettings,
 	AppearanceSettings,
+	AppearanceTheme,
 	BackgroundModelRole,
 	CompactionSettings,
 	GeneralSettings,
@@ -24,7 +25,7 @@ import type {
 	ModelsSettings,
 	RoleModelOverride,
 } from "../core/settings.ts";
-import { BACKGROUND_MODEL_ROLES, COMPACTION_THRESHOLD_FLOOR, EXTRACTION_CHUNK_TOKENS_FLOOR, MODEL_SLOTS } from "../core/settings.ts";
+import { APPEARANCE_THEMES, BACKGROUND_MODEL_ROLES, COMPACTION_THRESHOLD_FLOOR, EXTRACTION_CHUNK_TOKENS_FLOOR, MODEL_SLOTS } from "../core/settings.ts";
 import { WRITABLE_TOOL_KEYS } from "../core/pending.ts";
 import { isDictationLanguage } from "../core/dictation.ts";
 
@@ -210,7 +211,7 @@ function parseHexOrNull(value: unknown, field: string): { color?: string | null;
 }
 
 /** appearance: { mode?, background?, fontFamily?, proseFontSize?,
- *  sessionNameSerif?, mdRendering? } */
+ *  sessionNameSerif?, theme?, glassAmount?, mdRendering? } */
 export function parseAppearanceSettingsBody(body: unknown): SettingsBodyResult<AppearanceSettings> {
 	const raw = asRecord(body);
 	if (!raw) return { ok: false, error: "Invalid JSON body" };
@@ -248,6 +249,23 @@ export function parseAppearanceSettingsBody(body: unknown): SettingsBodyResult<A
 			return { ok: false, error: "sessionNameSerif must be a boolean" };
 		}
 		settings.sessionNameSerif = raw.sessionNameSerif;
+	}
+	if (raw.theme !== undefined) {
+		if (!(APPEARANCE_THEMES as readonly unknown[]).includes(raw.theme)) {
+			return { ok: false, error: `theme must be one of ${APPEARANCE_THEMES.map((t) => `"${t}"`).join(", ")}` };
+		}
+		settings.theme = raw.theme as AppearanceTheme;
+	}
+	if (raw.glassAmount !== undefined) {
+		if (
+			typeof raw.glassAmount !== "number" ||
+			!Number.isInteger(raw.glassAmount) ||
+			raw.glassAmount < 0 ||
+			raw.glassAmount > 100
+		) {
+			return { ok: false, error: "glassAmount must be an integer between 0 and 100" };
+		}
+		settings.glassAmount = raw.glassAmount;
 	}
 	if (raw.mdRendering !== undefined) {
 		const md = asRecord(raw.mdRendering);

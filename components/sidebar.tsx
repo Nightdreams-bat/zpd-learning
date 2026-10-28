@@ -647,7 +647,7 @@ function SessionsSidebar() {
 			className={cn("sidebar-motion shrink-0 overflow-hidden duration-200", open ? "w-72" : "w-0")}
 			aria-hidden={!open}
 		>
-			<div className="flex h-full w-72 flex-col border-r bg-background">
+			<div className="lh-glass-chrome flex h-full w-72 flex-col border-r bg-background">
 				{/* LH wordmark — the owner's header; close toggle sits at the edge.
 				    Merged chrome (2026-09-17): in Electron this band is the
 				    window's drag surface and starts after the traffic lights
@@ -944,7 +944,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 	return (
 		<SettingsDialogProvider>
 			<SessionsSidebar />
-			<main className="min-w-0 flex-1">{children}</main>
+			<main className="lh-glass-read min-w-0 flex-1">{children}</main>
 			{/* The single document-level keydown listener (keyboard wave A) —
 			    after the content in the tree, but it's window-level so order only
 			    matters for the events it dispatches, never for DOM priority. */}

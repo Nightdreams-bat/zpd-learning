@@ -7,7 +7,7 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { appearanceVars, derivedPalette, resolveAppearance, staleVarNames } from "../components/settings/appearance.tsx";
+import { appearanceVars, derivedPalette, glassPalette, resolveAppearance, staleVarNames } from "../components/settings/appearance.tsx";
 import {
 	PROMPT_IN_USE_HINT,
 	composePromptSwitch,
@@ -387,5 +387,28 @@ describe("composeQuizMechanics (the segmented control's write)", () => {
 			assert.equal(after.tools?.research, false, "the research toggle carries verbatim");
 			assert.deepEqual(after.prompts, before.prompts, "the prompts map carries verbatim");
 		}
+	});
+});
+
+describe("Graphite Frost glass theme", () => {
+	it("factory is the solid theme at glass 50 — no glass vars", () => {
+		const a = resolveAppearance(undefined);
+		assert.equal(a.theme, "solid");
+		assert.equal(a.glassAmount, 50);
+		assert.equal(appearanceVars(a)["--lh-glass-chrome"], undefined);
+	});
+
+	it("glass owns the palette: the background color sits out", () => {
+		const vars = appearanceVars(resolveAppearance({ theme: "graphite-frost", background: "#202020" }));
+		assert.equal(vars["--background"], glassPalette(50)["--background"]);
+		assert.ok(vars["--lh-glass-chrome"]);
+	});
+
+	it("the reading pane never drops below 55% solid; the amount clamps", () => {
+		assert.equal(glassPalette(0)["--background"], "rgba(20, 20, 22, 0.820)");
+		assert.equal(glassPalette(100)["--background"], "rgba(20, 20, 22, 0.550)");
+		assert.equal(glassPalette(500)["--background"], glassPalette(100)["--background"]);
+		assert.equal(glassPalette(0)["--lh-glass-chrome"], "rgba(28, 28, 31, 0.600)");
+		assert.equal(glassPalette(100)["--lh-glass-chrome"], "rgba(28, 28, 31, 0.250)");
 	});
 });

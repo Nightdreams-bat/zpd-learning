@@ -31,6 +31,8 @@ export function resolveAppearance(delta: AppearanceSettings | undefined) {
 		fontFamily: delta?.fontFamily ?? f.fontFamily,
 		proseFontSize: delta?.proseFontSize ?? f.proseFontSize,
 		sessionNameSerif: delta?.sessionNameSerif ?? f.sessionNameSerif,
+		theme: delta?.theme ?? f.theme,
+		glassAmount: delta?.glassAmount ?? f.glassAmount,
 		mdRendering: {
 			headingWeight: delta?.mdRendering?.headingWeight ?? f.mdRendering.headingWeight,
 			boldColor: delta?.mdRendering?.boldColor ?? f.mdRendering.boldColor,
@@ -71,12 +73,39 @@ export function derivedPalette(background: string): Record<string, string> {
 	};
 }
 
+/** Graphite Frost (glass theme): the palette as translucent layers. The
+ *  glass amount (0–100) moves two alphas — the frame's (sidebar, top bar,
+ *  dock: 60% → 25% solid) and the reading pane's (82% → 55% solid, never
+ *  lower: the backdrop is dark everywhere, so even at 55% body text keeps
+ *  ~12:1 and muted text ~4.6:1 against its brightest glow). Menus and
+ *  cards stay ~92% solid; hovers and edges become white veils so they read
+ *  on any layer. Pure — exported for tests. */
+export function glassPalette(amount: number): Record<string, string> {
+	const t = Math.min(100, Math.max(0, amount)) / 100;
+	const lerp = (a: number, b: number) => (a + (b - a) * t).toFixed(3);
+	return {
+		"--background": `rgba(20, 20, 22, ${lerp(0.82, 0.55)})`,
+		"--card": "rgba(30, 30, 33, 0.92)",
+		"--popover": "rgba(30, 30, 33, 0.94)",
+		"--secondary": "rgba(255, 255, 255, 0.05)",
+		"--muted": "rgba(255, 255, 255, 0.05)",
+		"--accent": "rgba(255, 255, 255, 0.08)",
+		"--border": "rgba(255, 255, 255, 0.10)",
+		"--input": "rgba(255, 255, 255, 0.10)",
+		"--primary-foreground": "#141414",
+		"--lh-glass-chrome": `rgba(28, 28, 31, ${lerp(0.6, 0.25)})`,
+	};
+}
+
 /** THE mapping: resolved appearance → the CSS variables to set on <html>.
  *  Absent entries = leave the factory stylesheet value in place. Pure —
  *  exported for tests. */
 export function appearanceVars(a: ReturnType<typeof resolveAppearance>): Record<string, string> {
 	const vars: Record<string, string> = {};
-	if (a.background !== null) Object.assign(vars, derivedPalette(a.background));
+	// A glass theme owns the whole palette; the background color is a solid-
+	// theme knob and sits out (the settings row says so).
+	if (a.theme === "graphite-frost") Object.assign(vars, glassPalette(a.glassAmount));
+	else if (a.background !== null) Object.assign(vars, derivedPalette(a.background));
 	if (a.fontFamily !== null) {
 		vars["--font-prose"] = `"${a.fontFamily}", var(--font-sans3), ui-sans-serif, system-ui, sans-serif`;
 	}
@@ -150,6 +179,13 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
 			appliedNamesRef.current.add(name);
 		}
 	}, [key, vars]);
+
+	// The theme's structural half (backdrop, glass layers) keys off a class
+	// on <html> — app/globals.css, "GLASS THEME".
+	const theme = resolveAppearance(delta).theme;
+	useEffect(() => {
+		document.documentElement.classList.toggle("lh-glass", theme === "graphite-frost");
+	}, [theme]);
 
 	// One fetch per app load: the record (sanitized server-side) carries the
 	// delta; resolution happens here against the compiled factory.

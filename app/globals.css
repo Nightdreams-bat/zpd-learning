@@ -246,6 +246,76 @@ body {
 	line-height: 1.25;
 }
 
+/* GLASS THEME — Graphite Frost (appearance.theme = "graphite-frost").
+   components/settings/appearance.tsx toggles <html class="lh-glass"> and sets
+   the translucent palette (glassPalette) inline; this block is the structure:
+   - the backdrop: dim slate + umber light painted on <body> (static radial
+     gradients — soft already, so nothing behind the panes needs a blur pass);
+   - .lh-glass-read (the content column): one nearly solid pane, so lesson
+     text never takes its contrast from the backdrop;
+   - .lh-glass-chrome (sidebar, top bar, docks): frosted glass. The tint +
+     blur ride a ::before layer, NOT the element: backdrop-filter on the
+     element would make it the containing block for fixed descendants.
+   Reduce-transparency (OS setting) and no-blur browsers fall back to solid. */
+html.lh-glass body {
+	background:
+		radial-gradient(60% 55% at 12% 10%, rgba(52, 60, 80, 0.95), transparent 70%),
+		radial-gradient(55% 50% at 92% 45%, rgba(70, 58, 42, 0.85), transparent 70%),
+		radial-gradient(50% 45% at 45% 100%, rgba(38, 56, 50, 0.8), transparent 70%),
+		#0d0e10;
+	background-attachment: fixed;
+}
+
+html.lh-glass body::before {
+	content: "";
+	position: fixed;
+	inset: 0;
+	z-index: -1;
+	pointer-events: none;
+	opacity: 0.05;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.lh-glass .lh-glass-read {
+	background: var(--background);
+}
+
+.lh-glass .lh-glass-chrome {
+	position: relative;
+	isolation: isolate;
+	background: transparent;
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.lh-glass .lh-glass-chrome::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	z-index: -1;
+	border-radius: inherit;
+	pointer-events: none;
+	background: var(--lh-glass-chrome);
+	backdrop-filter: blur(28px) saturate(140%);
+	-webkit-backdrop-filter: blur(28px) saturate(140%);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+	.lh-glass .lh-glass-chrome::before {
+		background: rgb(28, 28, 31);
+	}
+}
+
+@media (prefers-reduced-transparency: reduce) {
+	.lh-glass .lh-glass-read {
+		background: #141414;
+	}
+	.lh-glass .lh-glass-chrome::before {
+		background: #1c1c1c;
+		backdrop-filter: none;
+		-webkit-backdrop-filter: none;
+	}
+}
+
 /* Thin dark native scrollbar (app-wide): dark thumb, transparent track. */
 * {
 	scrollbar-width: thin;
