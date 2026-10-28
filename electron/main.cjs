@@ -506,6 +506,14 @@ function installUpdateNow() {
 }
 
 function setupAutoUpdater() {
+	// Fork (claude-cli): the fork has no public release feed yet, and upstream's feed would
+	// swap in the stock build (no claude-cli). Updates come from scripts/update-from-upstream.
+	// Set LH_FORK_UPDATES=1 once the fork publishes its own releases.
+	if (process.env.LH_FORK_UPDATES !== "1") {
+		log("auto-update: disabled in the claude-cli fork");
+		reportUpdateStatus("disabled");
+		return;
+	}
 	if (!app.isPackaged) {
 		log("auto-update: dev build — updater disabled");
 		reportUpdateStatus("disabled");
