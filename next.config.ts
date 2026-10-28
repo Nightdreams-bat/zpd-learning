@@ -107,6 +107,9 @@ const nextConfig: NextConfig = {
 		"pdfjs-dist", // sources v0: bundling breaks its node fake-worker path
 		"@napi-rs/canvas", // native binding — bundling breaks the .node require
 		"@resvg/resvg-js", // native binding — same
+		"kokoro-js", // fork: read-aloud narrator; onnxruntime-node is a native binding
+		"@huggingface/transformers",
+		"onnxruntime-node",
 	],
 };
 
