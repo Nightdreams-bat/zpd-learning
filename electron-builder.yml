@@ -9,8 +9,8 @@
 #   - signed + notarized since 2026-10-08 (Developer ID Application cert in
 #     the login keychain; notary credentials in the LH_NOTARY keychain
 #     profile; the profile + team env vars are baked into desktop:dist).
-appId: com.learnharness.LearnHarness
-productName: LearnHarness
+appId: com.learnharness.LearnHarnessClaude
+productName: LearnHarness Claude
 directories:
   output: dist
 # Icons (owner ruling, 2026-10-13) — per-platform sources in build/:
@@ -153,8 +153,9 @@ win:
   signExecutable: false
   verifyUpdateCodeSignature: false
 nsis:
-  oneClick: true
+  oneClick: false
   perMachine: false
+  allowToChangeInstallationDirectory: true
 linux:
   icon: build/icon.png
   target:

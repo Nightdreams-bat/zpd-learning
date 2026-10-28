@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { AssistantMessage, Message, Tool } from "@earendil-works/pi-ai";
-import { ToolCallScanner, callProblem, renderTranscript, type ScanEvent } from "../src/agent/claude-cli-protocol.ts";
+import { ToolCallScanner, callProblem, defangReasoningAsks, renderTranscript, type ScanEvent } from "../src/agent/claude-cli-protocol.ts";
 
 const schemas = (tool: string) =>
 	tool === "quiz"
@@ -76,6 +76,26 @@ test("an echoed [assistant] label is stripped, however the chunks fall", () => {
 	assert.equal(prose(run(["[assistant] Hi there"])), "Hi there");
 	assert.equal(prose(run(["[assist"])), "[assist", "a partial label that never completes is prose");
 	assert.equal(prose(run(["No label [assistant] mid-text"])), "No label [assistant] mid-text");
+});
+
+test("an invented <invoke_tool_call> wrapper is dropped like <function_calls>", () => {
+	const ev = run(['<invoke_tool_call>\n<invoke name="quiz"><parameter name="question">q</parameter></invoke>\n</invoke_tool_call>']);
+	assert.deepEqual(ev.map((e) => e.type), ["call"]);
+	assert.equal(callOf(ev).name, "quiz");
+});
+
+test("replayed history is reworded where it asks for reasoning to be shown (Sonnet's reasoning_extraction safeguard)", () => {
+	assert.equal(defangReasoningAsks("Use the thinking field to reason out loud."), "Use the thinking field to explain your thinking.");
+	assert.equal(defangReasoningAsks("Think it through aloud, then answer."), "explain your thinking, then answer.");
+	assert.equal(defangReasoningAsks("Please show your reasoning."), "Please explain your thinking.");
+	assert.equal(defangReasoningAsks("Reveal the chain-of-thought now"), "explain your thinking now");
+	assert.equal(defangReasoningAsks("He is thinking about sets; the answer is 4."), "He is thinking about sets; the answer is 4.");
+	const r = renderTranscript([
+		{ role: "user", content: "hi", timestamp: 0 },
+		asst([{ type: "text", text: "Use the thinking field to reason out loud." }]),
+	]);
+	assert.match(JSON.stringify(r.blocks), /explain your thinking/);
+	assert.doesNotMatch(JSON.stringify(r.blocks), /out loud/);
 });
 
 test("a lone '<' is held back, then released as prose", () => {

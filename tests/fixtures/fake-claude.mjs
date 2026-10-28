@@ -43,6 +43,8 @@ function scenario(marker) {
 	if (marker.includes("ECHOSYS")) return { text: `SYS<${system}>`.replaceAll("<", "‹") }; // defanged: the echo must not parse as a call
 	if (marker.includes("HANG")) return { hang: true };
 	if (marker.includes("CRASH")) return { crash: true };
+	// A model whose safeguards refuse the request outright (the real CLI reports it as an error result).
+	if (marker.includes("FLAGGED") && (model === "sonnet" || model === "opus" && marker.includes("ALLFLAG"))) return { flag: true };
 	return { text: "ok" };
 }
 
@@ -53,6 +55,11 @@ function respond(blocks) {
 	const sc = scenario(marker);
 	if (sc.hang) return void setInterval(() => {}, 1000); // alive, silent
 	if (sc.crash) process.exit(3);
+	if (sc.flag) {
+		send({ type: "system", subtype: "init", session_id: "fake" });
+		send({ type: "result", subtype: "success", is_error: true, stop_reason: "stop_sequence", result: "API Error: Sonnet 5.5's safeguards flagged this message (https://www.anthropic.com/legal/aup). Details: `[reasoning_extraction]`", usage: {} });
+		process.exit(1);
+	}
 	send({ type: "system", subtype: "init", session_id: "fake" });
 	ev({ type: "message_start", message: { usage: { input_tokens: 2, cache_read_input_tokens: 100, cache_creation_input_tokens: 10 } } });
 	let index = 0;

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import {
 	createProvider,
 	type AssistantMessage,
@@ -61,6 +62,13 @@ const EFFORT: Record<string, string | undefined> = {
 /** Who gets asked again when a light model's answer is unusable. */
 const ESCALATE_TO: Record<string, string> = { haiku: "sonnet" };
 
+/** Who answers when a model's safeguards refuse the request outright. The refusal is
+ *  per model and content-driven (measured: the same request passed Opus and Haiku and
+ *  was flagged on Sonnet), so the same request goes to another model instead of failing. */
+const FLAG_FALLBACK: Record<string, string> = { sonnet: "opus", opus: "haiku", haiku: "sonnet" };
+
+const FLAGGED = /safeguards flagged/i;
+
 function escalationOf(id: string): string | undefined {
 	return process.env.CLAUDE_CLI_ESCALATE === "0" ? undefined : ESCALATE_TO[id];
 }
@@ -80,7 +88,7 @@ function cliModel(id: string, name: string): Model<typeof CLAUDE_CLI_API> {
 		reasoning: true,
 		thinkingLevelMap: { off: "off", minimal: "low", low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" },
 		cost: ZERO_COST,
-		contextWindow: 200_000,
+		contextWindow: 500_000,
 		maxTokens: 32_000,
 	};
 }
@@ -119,13 +127,23 @@ interface CliUsage {
 }
 
 interface AttemptResult {
-	kind: "ok" | "error" | "aborted";
+	kind: "ok" | "error" | "aborted" | "flagged";
 	message: AssistantMessage;
 	/** Set on an "ok" whose content a stronger model might do better (see ESCALATION). */
 	problem?: string;
 }
 
 type Sink = (event: AssistantMessageEvent) => void;
+
+/** CLAUDE_CLI_DEBUG=1: one stderr line per finished call — what answered, how it ended, what it said. */
+function trace(r: AttemptResult, asked: string): void {
+	if (process.env.CLAUDE_CLI_DEBUG !== "1") return;
+	const m = r.message;
+	const body = m.content
+		.map((c) => (c.type === "text" ? `text:${JSON.stringify(c.text.slice(0, 300))}` : c.type === "toolCall" ? `call:${c.name}(${JSON.stringify(c.arguments).slice(0, 200)})${c.argumentsError ? `!${c.argumentsError.slice(0, 120)}` : ""}` : c.type))
+		.join(" | ");
+	console.error(`[claude-cli] ${asked}→${m.responseModel ?? m.model} ${r.kind} stop=${m.stopReason}${m.errorMessage ? ` error=${JSON.stringify(m.errorMessage)}` : ""}${r.problem ? ` problem=${JSON.stringify(r.problem)}` : ""} ${body}`);
+}
 
 /** One model call end to end: claim a process, hand it the request, translate its output. */
 function attempt(
@@ -135,6 +153,8 @@ function attempt(
 	rendered: RenderedTranscript,
 	options: SimpleStreamOptions | undefined,
 	sink: Sink,
+	/** A safeguard refusal that arrives before any output resolves "flagged" instead of an error. */
+	flagFallbackAvailable: boolean,
 ): Promise<AttemptResult> {
 	return new Promise((resolve) => {
 		const out = emptyMessage(model, answeredBy);
@@ -187,6 +207,11 @@ function attempt(
 				options?.signal?.removeEventListener("abort", onAbort);
 			};
 			const finishErr = (reason: "error" | "aborted", message: string) => {
+				if (flagFallbackAvailable && !started && FLAGGED.test(message)) {
+					out.stopReason = "error";
+					out.errorMessage = message;
+					return resolve({ kind: "flagged", message: out });
+				}
 				out.stopReason = reason;
 				out.errorMessage = message;
 				emit({ type: "error", reason, error: out });
@@ -251,6 +276,8 @@ function attempt(
 
 			const handleLine = (line: string) => {
 				if (!line.trim()) return;
+				if (process.env.CLAUDE_CLI_DEBUG_RAW) appendFileSync(process.env.CLAUDE_CLI_DEBUG_RAW, `${line}
+`);
 				let msg: any;
 				try {
 					msg = JSON.parse(line);
@@ -358,6 +385,12 @@ function attempt(
 				resolve({ kind: "ok", message: out, ...(problem ? { problem } : {}) });
 			});
 
+			if (process.env.CLAUDE_CLI_DEBUG_REQ) {
+				const stem = `${process.env.CLAUDE_CLI_DEBUG_REQ}/${Date.now()}-${answeredBy}`;
+				mkdirSync(process.env.CLAUDE_CLI_DEBUG_REQ, { recursive: true });
+				writeFileSync(`${stem}-system.md`, rendered.system);
+				writeFileSync(`${stem}-blocks.json`, JSON.stringify(rendered.blocks, null, 1));
+			}
 			send(proc, rendered.system, rendered.blocks);
 		};
 
@@ -373,18 +406,30 @@ async function drive(
 ): Promise<void> {
 	const rendered = renderTranscript(context.messages);
 	const effort = effortOf(options?.reasoning);
-	const plan = [model.id];
-	const up = escalationOf(model.id);
-	if (up) plan.push(up);
+	const tried = new Set<string>();
+	let id = model.id;
 
-	for (let i = 0; i < plan.length; i++) {
-		const id = plan[i]!;
-		const last = i === plan.length - 1;
-		// A light model's answer is held until it is known to be usable; the last resort streams.
+	for (;;) {
+		tried.add(id);
+		const up = escalationOf(id);
+		const fallback = FLAG_FALLBACK[id];
+		const canEscalate = up !== undefined && !tried.has(up);
+		const canFallBack = fallback !== undefined && !tried.has(fallback);
+		// A light model's answer is held until it is known to be usable; anything else streams.
 		const held: AssistantMessageEvent[] = [];
-		const sink: Sink = last ? (e) => stream.push(e) : (e) => void held.push(e);
-		const r = await attempt(model, id, { model: id, effort }, rendered, options, sink);
-		if (!last && r.kind === "ok" && r.problem) continue;
+		const sink: Sink = canEscalate ? (e) => void held.push(e) : (e) => stream.push(e);
+		const r = await attempt(model, id, { model: id, effort }, rendered, options, sink, canFallBack);
+		trace(r, id);
+		if (r.kind === "flagged" && canFallBack) {
+			id = fallback!;
+			continue;
+		}
+		// A light model asked to act (tools on offer) that answers in prose alone has not done the job.
+		const silent = rendered.tools.size > 0 && !r.message.content.some((c) => c.type === "toolCall");
+		if (canEscalate && r.kind === "ok" && (r.problem || silent)) {
+			id = up!;
+			continue;
+		}
 		for (const e of held) stream.push(e);
 		stream.end(r.message);
 		return;

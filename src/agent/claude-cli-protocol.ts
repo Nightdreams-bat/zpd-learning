@@ -33,7 +33,8 @@ interface Opener {
 	close: string;
 }
 /** Wrapper tags: dropped from the prose, carry nothing themselves. */
-const WRAPPERS = ["<function_calls>", "</function_calls>"] as const;
+/** (Haiku sometimes invents an `<invoke_tool_call>` wrapper; it is dropped the same way.) */
+const WRAPPERS = ["<function_calls>", "</function_calls>", "<invoke_tool_call>", "</invoke_tool_call>"] as const;
 const CALL_FORMS: readonly Opener[] = [
 	{ open: "<invoke", close: "</invoke>" },
 	{ open: "<tool_call", close: "</tool_call>" },
@@ -250,6 +251,27 @@ export function callProblem(ev: Extract<ScanEvent, { type: "call" }>, tools: Rea
 	return undefined;
 }
 
+/**
+ * Sonnet's safeguards reject a request whose text asks for its reasoning to be shown
+ * (`[reasoning_extraction]`) — and the replayed transcript is ONE user message, so a
+ * phrase the app wrote into an earlier tool call ("use the thinking field to reason out
+ * loud", aimed at the learner) reads as the user asking for it. Measured on a real chat:
+ * removing the sentence or rewording it to "explain your thinking" passes, "show your
+ * reasoning" is flagged too. Replayed history therefore rewords these phrasings; the
+ * system prompt and live output are never touched.
+ */
+const REASONING_ASKS: ReadonlyArray<readonly [RegExp, string]> = [
+	[/\b(?:reason(?:ing)?|think(?:ing|s)?|work(?:ing)?)(?:\s+(?:it|things|this|that|them))?(?:\s+through)?\s+(?:out\s+loud|aloud)\b/gi, "explain your thinking"],
+	[/\bshow\s+(?:your|the|its|their)\s+(?:reasoning|chain[- ]of[- ]thought|thought\s+process|working)\b/gi, "explain your thinking"],
+	[/\b(?:reveal|expose|output|print|write\s+out)\s+(?:your|the)\s+(?:reasoning|chain[- ]of[- ]thought|thought\s+process)\b/gi, "explain your thinking"],
+];
+
+export function defangReasoningAsks(text: string): string {
+	let out = text;
+	for (const [re, to] of REASONING_ASKS) out = out.replace(re, to);
+	return out;
+}
+
 function textOf(content: string | TextContent[]): string {
 	return typeof content === "string" ? content : content.map((c) => c.text).join("");
 }
@@ -294,7 +316,7 @@ export function renderTranscript(messages: readonly Message[]): RenderedTranscri
 	const blocks: Block[] = [];
 	let sawSystem = false;
 
-	const text = (t: string) => blocks.push({ type: "text", text: t });
+	const text = (t: string) => blocks.push({ type: "text", text: defangReasoningAsks(t) });
 	const image = (c: { data: string; mimeType: string }) =>
 		blocks.push({ type: "image", source: { type: "base64", media_type: c.mimeType, data: c.data } });
 

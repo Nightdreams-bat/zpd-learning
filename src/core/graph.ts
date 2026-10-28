@@ -506,6 +506,21 @@ export function deriveView(graph: DerivedGraph): {
 // ─── the /api/graph payload ──────────────────────────────────────────────────
 
 /** Everything the home graph view needs, in one fetch (shape: contracts). */
+/**
+ * What a notes-import source is CALLED wherever the graph shows one (constellation
+ * labels, the session list, the cost table): just its title. The stored `filePath`
+ * is bookkeeping and may carry where the note came from — the import convention
+ * `notion__Area__2026-10-05 - Title.md` / `obsidian__Folder__Title.md` — and the
+ * learner should see "Title" and nothing about provenance: no source tag, no
+ * folder, no date prefix, no extension. A plain file name just loses its extension.
+ */
+export function sourceTitle(filePath: string): string {
+	let name = filePath.split(/[\\/]/).pop() ?? filePath;
+	if (/^(?:notion|obsidian)__/i.test(name)) name = name.split("__").pop() ?? name;
+	name = name.replace(/[.](?:md|markdown|txt)$/i, "").replace(/^[0-9]{4}-[0-9]{2}-[0-9]{2}[ ]*[-]+[ ]*/, "").trim();
+	return name || filePath;
+}
+
 export function graphSnapshot(deps: GraphDeps): GraphSnapshot {
 	const graph = getGraph(deps.graphStore);
 	// The canvas-facing lossy image: propositions + derived implication
@@ -543,7 +558,7 @@ export function graphSnapshot(deps: GraphDeps): GraphSnapshot {
 			continue;
 		}
 		const source = deps.graphStore.readSources().find((s) => s.id === id);
-		if (source) fileSources[id] = source.filePath;
+		if (source) fileSources[id] = sourceTitle(source.filePath);
 	}
 
 	const nodeSessions: Record<string, string[]> = {};
@@ -651,7 +666,7 @@ export function graphSessionIndex(deps: GraphDeps): GraphSessionEntry[] {
 		const source = sources.get(id);
 		entries.push({
 			id,
-			name: source?.filePath ?? id,
+			name: source ? sourceTitle(source.filePath) : id,
 			kind: "file",
 			createdAt: source?.importedAt ?? null,
 			updatedAt: source?.importedAt ?? null,

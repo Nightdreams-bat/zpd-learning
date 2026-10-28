@@ -3,7 +3,7 @@ import { LEDGER_FILES, POSITIONS_FILE } from "../../config.ts";
 import type { GraphSnapshot } from "../core/contracts.ts";
 import type { GraphCostSummary } from "../core/cost-summary.ts";
 import { graphCostSummary } from "../core/cost-summary.ts";
-import { graphSnapshot } from "../core/graph.ts";
+import { graphSnapshot, sourceTitle } from "../core/graph.ts";
 import { birthSessionPartition } from "../core/session-clusters.ts";
 import {
 	deleteNodeTraces,
@@ -40,7 +40,7 @@ export function graphCosts(): GraphCostSummary {
 	const sources = stores.graphStore
 		.readSources()
 		.filter((s) => s.extractions?.length)
-		.map((s) => ({ filePath: s.filePath, extractions: s.extractions! }));
+		.map((s) => ({ filePath: sourceTitle(s.filePath), extractions: s.extractions! }));
 	return graphCostSummary({ chats, sources });
 }
 

@@ -172,11 +172,17 @@ describe("claude-cli provider (fake CLI)", () => {
 		assert.deepEqual(readLog().filter((l) => l.ev === "request").map((l) => l.model), ["haiku", "sonnet"]);
 	});
 
-	it("a sound light-model answer is delivered as-is (no second call)", async () => {
-		const { message } = await ask("SAY", { model: "haiku" });
-		assert.equal(textOf(message), "hello there");
+	it("a sound light-model tool call is delivered as-is (no second call)", async () => {
+		const { message } = await ask("CALLQ", { model: "haiku" });
+		assert.equal(message.stopReason, "toolUse");
 		assert.equal(message.responseModel, undefined);
 		assert.equal(readLog().filter((l) => l.ev === "request").length, 1);
+	});
+
+	it("a light model that answers in prose when tools were offered is re-asked of the stronger one", async () => {
+		const { message } = await ask("SAY", { model: "haiku" });
+		assert.equal(message.responseModel, "sonnet");
+		assert.deepEqual(readLog().filter((l) => l.ev === "request").map((l) => l.model), ["haiku", "sonnet"]);
 	});
 
 	it("CLAUDE_CLI_ESCALATE=0 turns escalation off", async () => {
@@ -221,6 +227,22 @@ describe("claude-cli provider (fake CLI)", () => {
 		setTimeout(() => ac.abort(), 150);
 		const { message } = await ask("HANG", { signal: ac.signal });
 		assert.equal(message.stopReason, "aborted");
+	});
+
+	it("a safeguard refusal on Sonnet is retried on Opus without the consumer ever seeing the refusal", async () => {
+		const { events, message } = await ask("FLAGGED");
+		assert.equal(message.stopReason, "stop");
+		assert.equal(message.responseModel, "opus");
+		assert.equal(events.filter((e) => e.type === "start").length, 1);
+		assert.ok(!events.some((e) => e.type === "error"));
+		assert.deepEqual(readLog().filter((l) => l.ev === "request").map((l) => l.model), ["sonnet", "opus"]);
+	});
+
+	it("when Sonnet and Opus both refuse, the chain ends at Haiku", async () => {
+		const { message } = await ask("FLAGGED ALLFLAG");
+		assert.equal(message.stopReason, "stop");
+		assert.equal(message.responseModel, "haiku");
+		assert.deepEqual(readLog().filter((l) => l.ev === "request").map((l) => l.model), ["sonnet", "opus", "haiku"]);
 	});
 
 	it("a CLI that dies without output is an error carrying its exit code", async () => {

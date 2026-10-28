@@ -35,7 +35,9 @@ const path = require("node:path");
 // renderer owns the number; this is the IPC widen target).
 const SIDEBAR_AUTOCLOSE = 928;
 
-const PRODUCT_NAME = "LearnHarness";
+// Fork (claude-cli): its own name = its own userData, so it never shares data or
+// the single-instance lock with the stock LearnHarness release.
+const PRODUCT_NAME = "LearnHarness Claude";
 
 // APP NAME → userData (owner, 2026-10-10): the Application Support dir is
 // exactly "LearnHarness" in dev AND packaged. Packaged Electron would
@@ -444,6 +446,9 @@ function installUpdateNow() {
 }
 
 function setupAutoUpdater() {
+	// Fork: the upstream release feed would replace this build with the stock app (no claude-cli).
+	log("auto-update: disabled in the claude-cli fork");
+	if (process.env.LH_FORK_UPDATES !== "1") return;
 	if (!app.isPackaged) {
 		log("auto-update: dev build — updater disabled");
 		return;
