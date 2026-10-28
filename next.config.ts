@@ -113,6 +113,9 @@ const nextConfig: NextConfig = {
 		"@napi-rs/canvas", // native binding — bundling breaks the .node require
 		"@silvia-odwyer/photon-node", // CJS loads its adjacent WASM from disk
 		"@resvg/resvg-js", // native binding — same
+		"kokoro-js", // fork: read-aloud narrator; onnxruntime-node is a native binding
+		"@huggingface/transformers",
+		"onnxruntime-node",
 	],
 };
 

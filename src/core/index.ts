@@ -84,3 +84,5 @@ export * from "./coverage.ts";
 // ONE session→markdown formatter — the extractor's view and the user-facing
 // export share it. Pure, browser-safe.
 export * from "./session-markdown.ts";
+// speech-text.ts (fork): lesson markdown to spoken sentences for the read-aloud narrator. Pure, browser-safe.
+export * from "./speech-text.ts";
