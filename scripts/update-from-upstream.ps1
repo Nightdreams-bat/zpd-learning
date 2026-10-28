@@ -33,7 +33,7 @@ New-Item -ItemType Directory -Force $env:ELECTRON_CACHE | Out-Null
 
 function Step($msg) { Write-Host "`n== $msg" -ForegroundColor Cyan }
 function Stop-Update($msg) { Write-Host "`nSTOPPED: $msg" -ForegroundColor Red; exit 1 }
-function Git { & git @args; if ($LASTEXITCODE -ne 0) { throw "git $($args -join ' ') failed" } }
+function Invoke-Git { & git @args; if ($LASTEXITCODE -ne 0) { throw "git $($args -join ' ') failed" } }
 
 if ((git rev-parse --abbrev-ref HEAD) -ne "main") { Stop-Update "not on main. Switch to main first." }
 if (git status --porcelain --untracked-files=no) { Stop-Update "uncommitted changes. Commit or stash them first." }
@@ -42,7 +42,7 @@ if (Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyCont
 }
 
 Step "Fetching $Upstream"
-Git fetch $Upstream --tags --quiet
+Invoke-Git fetch $Upstream --tags --quiet
 $tag = (git describe --tags --abbrev=0 "$Upstream/main")
 $behind = [int](git rev-list --count "HEAD..$Upstream/main")
 if ($behind -eq 0) { Write-Host "Already up to date with upstream ($tag)." -ForegroundColor Green; exit 0 }
@@ -51,19 +51,20 @@ git log --oneline --no-merges -n 15 "HEAD..$Upstream/main"
 
 $branch = "merge-upstream-$tag-$(Get-Date -Format 'yyyyMMdd-HHmm')"
 Step "Merging on branch $branch"
-Git switch -c $branch
+Invoke-Git switch -c $branch
 & git merge "$Upstream/main" --no-edit -m "Merge upstream $tag into the claude-cli fork"
 if ($LASTEXITCODE -ne 0) {
 	$conflicts = (git diff --name-only --diff-filter=U) -join "`n  "
 	& git merge --abort
-	Git switch main
-	Git branch -D $branch
+	Invoke-Git switch main
+	Invoke-Git branch -D $branch
 	Stop-Update "merge conflicts in:`n  $conflicts`nNothing was changed. Ask Claude Code in this folder to 'merge upstream into the fork' to resolve them."
 }
 
 function Back-Out($why) {
-	Git switch main
+	Invoke-Git switch main
 	& npm install --no-audit --no-fund 2>&1 | Out-Null
+	& git checkout -- package-lock.json
 	Stop-Update "$why`nmain is untouched. The merge is kept on branch $branch for inspection."
 }
 
@@ -76,6 +77,8 @@ function Gate($name, [scriptblock]$run) {
 & git diff --quiet main HEAD -- package-lock.json
 if ($LASTEXITCODE -ne 0) {
 	Gate "npm install (dependencies changed)" { npm install --no-audit --no-fund }
+	# npm re-sorts keys in the lockfile; keep upstream's byte-for-byte so main stays clean.
+	Invoke-Git checkout -- package-lock.json
 }
 
 Gate "Typecheck" { npm run typecheck }
@@ -94,7 +97,7 @@ $failed | ForEach-Object { Write-Host "  $_" }
 $env:NODE_ENV = "production"
 if (-not $NoBuild) {
 	Gate "Production build" { npx next build }
-	Git checkout -- next-env.d.ts
+	Invoke-Git checkout -- next-env.d.ts
 }
 
 if (-not $NoSmoke) {
@@ -110,7 +113,7 @@ if (-not $NoSmoke) {
 }
 
 Step "All gates passed - updating main"
-Git switch main
-Git merge --ff-only $branch
-Git branch -d $branch
+Invoke-Git switch main
+Invoke-Git merge --ff-only $branch
+Invoke-Git branch -d $branch
 Write-Host "`nUpdated to $tag. Start it with start-learnharness.cmd" -ForegroundColor Green
