@@ -35,6 +35,7 @@ import {
 	EXTRACTION_CHUNK_TOKENS_FLOOR,
 	resolveSettings,
 	type AppearanceSettings,
+	type AppearanceTheme,
 	type GraphSettings,
 } from "@/src/core";
 import { MenuShell } from "@/components/menu-shell";
@@ -191,10 +192,43 @@ export function AppearanceSection({
 					<option value="dark">Dark</option>
 				</ThinSelect>
 			</SettingsRow>
+			<SettingsRow label="Theme" testid="row-theme">
+				<ThinSelect
+					value={resolved.theme}
+					ariaLabel="theme"
+					testid="select-theme"
+					onChange={(v) => onSectionChange({ ...appearance, theme: v as AppearanceTheme })}
+				>
+					<option value="solid">Solid</option>
+					<option value="graphite-frost">Graphite Frost (glass)</option>
+				</ThinSelect>
+			</SettingsRow>
+			{resolved.theme !== "solid" && (
+				<SettingsRow label="Glass amount" hint={`${resolved.glassAmount} of 100`} testid="row-glass-amount">
+					<CommitInput
+						type="number"
+						value={String(appearance?.glassAmount ?? "")}
+						placeholder="50"
+						ariaLabel="glass amount"
+						testid="input-glass-amount"
+						onCommit={(v) => {
+							// Empty = factory default: omit the key (absence is the unset).
+							if (v === "") {
+								onSectionChange({ ...appearance, glassAmount: undefined });
+								return;
+							}
+							const n = Number(v);
+							if (!Number.isFinite(n)) return;
+							onSectionChange({ ...appearance, glassAmount: Math.min(100, Math.max(0, Math.round(n))) });
+						}}
+					/>
+				</SettingsRow>
+			)}
 			<SettingsRow
 				label="Background"
-				hint={`Empty = ${resolved.background ?? "#141414"}`}
+				hint={resolved.theme === "solid" ? `Empty = ${resolved.background ?? "#141414"}` : "Not used by glass themes"}
 				testid="row-background"
+				dimmed={resolved.theme !== "solid"}
 			>
 				<CommitInput
 					value={appearance?.background ?? ""}

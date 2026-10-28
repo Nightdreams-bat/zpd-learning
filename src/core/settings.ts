@@ -375,6 +375,12 @@ export interface MdRenderingSettings {
 	italicColor?: string | null;
 }
 
+/** The window themes: "solid" = today's flat #141414 look; "graphite-frost"
+ *  = frosted-glass chrome (sidebar, top bar, dock) over a dim backdrop, the
+ *  reading column on a nearly solid pane. */
+export const APPEARANCE_THEMES = ["solid", "graphite-frost"] as const;
+export type AppearanceTheme = (typeof APPEARANCE_THEMES)[number];
+
 /** Appearance settings — mode, colors, type, markdown emphasis. */
 export interface AppearanceSettings {
 	/** "dark" | "light" (default dark). */
@@ -390,6 +396,11 @@ export interface AppearanceSettings {
 	proseFontSize?: number;
 	/** Session names in CMU Serif (default true — today's look). */
 	sessionNameSerif?: boolean;
+	/** Window theme (default "solid"). A glass theme ignores `background`. */
+	theme?: AppearanceTheme;
+	/** How much glass a glass theme shows, 0–100 (default 50): 0 = nearly
+	 *  solid panes, 100 = the most see-through the theme allows. */
+	glassAmount?: number;
 	mdRendering?: MdRenderingSettings;
 }
 
@@ -490,6 +501,8 @@ export interface FactorySettings {
 		fontFamily: string | null;
 		proseFontSize: number;
 		sessionNameSerif: boolean;
+		theme: AppearanceTheme;
+		glassAmount: number;
 		mdRendering: {
 			headingWeight: number;
 			boldColor: string | null;
@@ -510,6 +523,8 @@ export const FACTORY_SETTINGS: FactorySettings = {
 		fontFamily: null, // Source Sans 3
 		proseFontSize: 16,
 		sessionNameSerif: true,
+		theme: "solid",
+		glassAmount: 50,
 		mdRendering: { headingWeight: 900, boldColor: null, italicColor: null },
 	},
 	graph: { enabled: true, rendering: true, extractionChunkTokens: 4096 },
@@ -736,6 +751,10 @@ function sanitizeAppearance(raw: Record<string, unknown>): AppearanceSettings {
 	}
 	const sessionNameSerif = boolOrDrop(raw.sessionNameSerif);
 	if (sessionNameSerif !== undefined) out.sessionNameSerif = sessionNameSerif;
+	if ((APPEARANCE_THEMES as readonly unknown[]).includes(raw.theme)) out.theme = raw.theme as AppearanceTheme;
+	if (typeof raw.glassAmount === "number" && Number.isFinite(raw.glassAmount)) {
+		out.glassAmount = clamp(Math.round(raw.glassAmount), 0, 100);
+	}
 	if (raw.mdRendering !== undefined) out.mdRendering = sanitizeMdRendering(raw.mdRendering);
 	return out;
 }
