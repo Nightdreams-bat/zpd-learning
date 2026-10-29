@@ -505,6 +505,16 @@ export function deriveView(graph: DerivedGraph): {
 
 // ─── the /api/graph payload ──────────────────────────────────────────────────
 
+/**
+ * What a notes source is CALLED wherever the graph shows one (constellation
+ * labels, the session list, the cost table): its file name without the folder
+ * or extension. The stored `filePath` stays the full path for bookkeeping.
+ */
+export function sourceTitle(filePath: string): string {
+	const name = (filePath.split(/[\\/]/).pop() ?? filePath).replace(/[.](?:md|markdown|txt|pdf)$/i, "").trim();
+	return name || filePath;
+}
+
 /** Everything the home graph view needs, in one fetch (shape: contracts). */
 export function graphSnapshot(deps: GraphDeps): GraphSnapshot {
 	const graph = getGraph(deps.graphStore);
@@ -543,7 +553,7 @@ export function graphSnapshot(deps: GraphDeps): GraphSnapshot {
 			continue;
 		}
 		const source = deps.graphStore.readSources().find((s) => s.id === id);
-		if (source) fileSources[id] = source.filePath;
+		if (source) fileSources[id] = sourceTitle(source.filePath);
 	}
 
 	const nodeSessions: Record<string, string[]> = {};
@@ -651,7 +661,7 @@ export function graphSessionIndex(deps: GraphDeps): GraphSessionEntry[] {
 		const source = sources.get(id);
 		entries.push({
 			id,
-			name: source?.filePath ?? id,
+			name: source ? sourceTitle(source.filePath) : id,
 			kind: "file",
 			createdAt: source?.importedAt ?? null,
 			updatedAt: source?.importedAt ?? null,

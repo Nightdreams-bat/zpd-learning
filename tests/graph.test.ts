@@ -471,7 +471,7 @@ describe("the merger (mergeFindings)", () => {
 		);
 		const snap = graphSnapshot(graphDeps);
 		const node = snap.nodes.find((n) => n.statement === "Vim registers map single keys to editing commands.")!;
-		assert.equal(snap.fileSources["src_snapfixture"], "/vault/learn vim.md");
+		assert.equal(snap.fileSources["src_snapfixture"], "learn vim");
 		assert.deepEqual(snap.nodeSessions[node.id], ["src_snapfixture"], "the file entry joins the node's sessions list");
 		assert.equal(snap.sessions["src_snapfixture"], undefined, "a notes source is never a chat session");
 	});
@@ -510,7 +510,7 @@ describe("the merger (mergeFindings)", () => {
 		const mine = snap.clusters.find((c) => c.members.length === 3 && tri.every((s) => c.members.includes(snap.nodes.find((n) => n.statement === s)!.id)));
 		assert.ok(mine, "the trio is one cluster");
 		assert.equal(mine!.id, "src_clusterfixture");
-		assert.equal(mine!.label, "/vault/cluster notes.md", "a notes file is a birth-session — the label is its path");
+		assert.equal(mine!.label, "cluster notes", "a notes file is a birth-session — the label is its bare title, no path or source tag");
 
 		// Chains-primary split (owner, 2026-09-30): `nodes` is the canvas
 		// image, `propositions` the stored truth alone (the chain table's
