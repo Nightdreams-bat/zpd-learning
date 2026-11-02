@@ -8,6 +8,7 @@ import { ChatActionsContext } from "@/components/chat";
 import { downloadFile, slugFilename } from "@/components/artifacts/download";
 import { DispatchCard } from "@/components/artifacts/dispatch-card";
 import type { ArtifactPartProps, DemoResult } from "@/src/core";
+import { withMotionKit } from "@/src/core/motion-kit";
 
 /**
  * Demo artifact card (W6): while the part is input-available, a job activity
@@ -47,7 +48,9 @@ setTimeout(post,400);
 })();</script>`;
 
 /** Inject the bridge before </body> (or at the end of a body-less document). */
-export function buildDemoSrcDoc(html: string): string {
+export function buildDemoSrcDoc(source: string): string {
+	// The motion kit (src/core/motion-kit.ts) rides every demo, like the bridge.
+	const html = withMotionKit(source);
 	if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, `${DEMO_BRIDGE_SCRIPT}</body>`);
 	return `${html}${DEMO_BRIDGE_SCRIPT}`;
 }
@@ -193,7 +196,7 @@ function DemoFrame({
 						type="button"
 						aria-label="Download demo as HTML"
 						title="Download as HTML"
-						onClick={() => downloadFile(`${slugFilename(title)}.html`, html, "text/html")}
+						onClick={() => downloadFile(`${slugFilename(title)}.html`, withMotionKit(html), "text/html")}
 						data-testid="demo-download"
 						className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
 					>

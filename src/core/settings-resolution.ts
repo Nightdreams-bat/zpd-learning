@@ -41,6 +41,7 @@ import {
 	type ModelSlot,
 	type ModelSlotName,
 	type RoleModelOverride,
+	type TeachingMode,
 	type UserSettings,
 } from "./settings.ts";
 
@@ -84,6 +85,8 @@ export interface EffectiveSettings {
 		/** Prober graph tools (wave 7): passthrough delta as stored —
 		 * absent/undefined enabled = ON; consumers use graphToolsEnabled. */
 		graphTools: { enabled?: boolean };
+		/** Resolved teaching mode — absent resolves to "sprint". */
+		teachingMode: TeachingMode;
 	};
 	/** The resolved strong/cheap/vision slots: each tier's concrete model or
 	 *  NULL when the tier holds no model (no factory floor — BYOK all the
@@ -187,6 +190,7 @@ export function resolveSettings(record: UserSettings | null): EffectiveSettings 
 			prompts: agent.prompts ?? {},
 			search: agent.search ?? {},
 			graphTools: agent.graphTools ?? {},
+			teachingMode: agent.teachingMode ?? "sprint",
 		},
 		models: {
 			strong: resolveSlot(modelsSection.strong),

@@ -53,12 +53,24 @@ import { ArrowRightIcon, DumbbellIcon, WaypointsIcon } from "lucide-react";
 import type { PlanBlockData } from "@/src/core";
 import { QuestionDock } from "@/components/question-dock";
 import { SessionFind } from "@/components/session-find";
-import { ReadAloudButton } from "@/components/read-aloud";
 import { SessionMessageNavigation } from "@/components/session-navigation";
 import { PracticeDock } from "@/components/practice-dock";
+import { ReadAloudButton } from "@/components/read-aloud";
+import {
+	buildVisualizeIndex,
+	buildVisualizeRequest,
+	parseVisualizeRequest,
+	SelectionVisualize,
+	StepVisualizeButton,
+	SublessonVisualizeCard,
+	VisualizeRequestRow,
+	type VisualizeTarget,
+} from "@/components/visualize";
 import { ThinkingCard, type PracticeThinkingData } from "@/components/practice-cards";
 import { GraphContextCard, type GraphContextData } from "@/components/graph-context-card";
 import { TopBar } from "@/components/top-bar";
+import { FocusCard, GameHud, useRecallBonus } from "@/components/game-layer";
+import { ProfileProposal } from "@/components/learner-profile";
 import type { ArtifactPartProps, JobRecord, Phase3, QuestionAnswerData, QuestionFormDraft, TurnUsage, SessionPricing } from "@/src/core";
 import type { LhViewMessage } from "@/src/core";
 import { PhaseChip, PhaseDivider } from "@/components/phase-divider";
@@ -184,6 +196,13 @@ const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayout
 /** The quiet system line (custom-message scheme rendering): centered, muted,
  *  small — the transcript's voice for events that are not speech (wake
  *  scaffolding). */
+function userText(m: { parts: readonly { type: string; text?: string }[] }): string {
+	return m.parts
+		.filter((p) => p.type === "text")
+		.map((p) => p.text ?? "")
+		.join("\n");
+}
+
 function SystemLine({ children, testId }: { children: React.ReactNode; testId?: string }) {
 	return (
 		<div
@@ -256,6 +275,7 @@ export function Chat({
 	const { messages, nativeMessages, hasConfirmedConversation, contextTokens, send, continueIfOwed, steer, steerQueue, submitAnswer, dismissQuestion, dismissProblem, questionDraft, saveQuestionDraft, setMessages, adoptRecord, status, error, stop, clearError, resumeStream, setReattachSettled } =
 		useChatSession({ chatId, initialMessages, initialError, initiallyInFlight });
 
+	const [recallBonus, addRecallBonus] = useRecallBonus(chatId);
 	const sessionFindScopeRef = useRef<HTMLDivElement | null>(null);
 	const scrollContextRef = useRef<StickToBottomContext | null>(null);
 	const sourceTextParts = useMemo(() => firstSourceTextParts(messages), [messages]);
@@ -906,6 +926,11 @@ export function Chat({
 	// The session's live plan (drives the top-bar chip; the marginalia
 	// derives its own from the same transcript).
 	const planTree = useMemo(() => latestTree(messages), [messages]);
+	const vizIndex = useMemo(() => buildVisualizeIndex(messages), [messages]);
+	const conceptOf = (nodeId: string | null | undefined) => {
+		const node = nodeId ? planTree?.nodes.find((n) => n.id === nodeId) : undefined;
+		return node ? { title: node.title, summary: node.summary } : undefined;
+	};
 
 	// ── Session usage (wave-4 stats bar) ──
 	// The money channel: the record's turns log and read-time server Pi
@@ -1222,6 +1247,18 @@ export function Chat({
 		void send({ type: "text", text: t });
 	};
 
+	/* VISUALIZE (owner, 2026-10-28): one scoped request; mid-turn it steers. */
+	const requestVisualize = (target: VisualizeTarget) => {
+		if (pending || compacting) return;
+		if (zeroKeys) {
+			setSetupOpen(true);
+			return;
+		}
+		const t = buildVisualizeRequest(target);
+		if (busy) void steer(t);
+		else void send({ type: "text", text: t });
+	};
+
 	/* STEER VS SEND (owner arc 2026-10-03): a send while a turn runs steers
 	 * it — the quiet queue + the live agent's steering rail; the turn's own
 	 * stream lands the card when pi drains it. The branch is BUSY, not
@@ -1386,8 +1423,15 @@ export function Chat({
 						<PhaseChip phase={phases.at(-1) ?? "probe"} />
 					)}
 				</TopBar>
+				{kind !== "practice" && (
+					<GameHud chatId={chatId} messages={messages} busy={busy} sessionStart={nativeMessages[0]?.timestamp ?? null} bonus={recallBonus} />
+				)}
 
 				<SessionFind scopeRef={sessionFindScopeRef} scrollContextRef={scrollContextRef} />
+				<SelectionVisualize
+					scopeRef={sessionFindScopeRef}
+					onRequest={(passage, nodeId) => requestVisualize({ scope: "selection", passage, concept: conceptOf(nodeId) })}
+				/>
 				<div ref={sessionFindScopeRef} className="relative flex min-h-0 flex-1">
 				<Conversation className="h-full min-w-0 flex-1" initial="instant" contextRef={scrollContextRef}>
 					<SessionMessageNavigation />
@@ -1482,7 +1526,9 @@ export function Chat({
 									teachStepIndex(m.parts) === -1 ? (
 										<PhaseDivider key={`teach-${m.id || `m-${mi}`}`} phase="teach" />
 									) : null}
-									{m.role === "user" ? (
+									{m.role === "user" && parseVisualizeRequest(userText(m)) ? (
+										<VisualizeRequestRow request={parseVisualizeRequest(userText(m))!} />
+									) : m.role === "user" ? (
 										/* THE DOCUMENT ROW (owner round, 2026-10-05): no right-aligned
 										    bubble — the transcript reads as a document. User text is a
 										    full-width quote block: muted "You" label, muted rail,
@@ -1548,9 +1594,27 @@ export function Chat({
 														const sourceId = textPartMessageId(part.id);
 														const anchor = sourceId && sourceTextParts.get(sourceId) === part.id ? messageAnchorId(sourceId) : undefined;
 														return (
-															<div key={part.id || pi} id={anchor} data-source-message-id={sourceId ?? undefined} className="lh-source-passage group/step relative">
+															<div
+																key={part.id || pi}
+																id={anchor}
+																data-source-message-id={sourceId ?? undefined}
+																data-lh-teach={phases[mi] === "teach" ? "" : undefined}
+																data-lh-node={vizIndex.nodeOfText.get(`${mi}:${pi}`)}
+																className="lh-source-passage group/step relative"
+															>
 																<MessageResponse>{part.text}</MessageResponse>
 																{!(isLastPart && status === "streaming") && (part.text?.trim().length ?? 0) > 30 ? <ReadAloudButton markdown={part.text ?? ""} /> : null}
+																{phases[mi] === "teach" && !(isLastPart && status === "streaming") && part.text?.trim() ? (
+																	<StepVisualizeButton
+																		onClick={() =>
+																			requestVisualize({
+																				scope: "step",
+																				passage: part.text ?? "",
+																				concept: conceptOf(vizIndex.nodeOfText.get(`${mi}:${pi}`)),
+																			})
+																		}
+																	/>
+																) : null}
 															</div>
 														);
 													}
@@ -1610,6 +1674,24 @@ export function Chat({
 												}
 											})}
 										</MessageContent>
+										{(vizIndex.sublessonEnds.get(mi) ?? []).map((nodeId) => {
+											const concept = conceptOf(nodeId);
+											if (!concept) return null;
+											return (
+												<SublessonVisualizeCard
+													key={`viz-${nodeId}`}
+													title={concept.title}
+													summary={concept.summary}
+													onClick={() =>
+														requestVisualize({
+															scope: "sublesson",
+															passage: `The whole sub-lesson "${concept.title}"${concept.summary ? `: ${concept.summary}` : ""}`,
+															concept,
+														})
+													}
+												/>
+											);
+										})}
 									</Message>
 									)}
 								</Fragment>
@@ -1649,6 +1731,8 @@ export function Chat({
 									</Shimmer>
 								</span>
 							)}
+							{kind !== "practice" && <FocusCard messages={messages} busy={busy} onRecall={addRecallBonus} />}
+							{kind !== "practice" && <ProfileProposal busy={busy} />}
 							{openingError && <p role="alert" className="text-sm text-destructive">{OPENING_PROMPT_FAILURE}</p>}
 							{error && (
 								<div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm">

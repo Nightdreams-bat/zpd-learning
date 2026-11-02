@@ -6,6 +6,7 @@ import type { Usage } from "@earendil-works/pi-ai";
 import { PATHS } from "../../config.ts";
 import { APP_IDENTITY, piEngineFor, type PiEngine } from "./models.ts";
 import { effectivePromptSegments } from "./prompt-segments.ts";
+import type { TeachingMode } from "../core/settings.ts";
 import {
 	askUserQuestionTool,
 	createProberTools,
@@ -72,13 +73,31 @@ export type AgentKind = "prober" | "teacher" | "practice";
  *  tests/prompt-overrides.test.ts). Overrides are a static-file read
  *  through config paths, not request state — the store import carries no
  *  chat/job machinery. */
-export function composeInstructions(kind: AgentKind, switches?: Record<string, boolean>): string {
-	const segments = effectivePromptSegments(kind, switches ?? {});
-	return segments
-		.map((s) => (s.enabled ? s.overrideText! : s.sourceText))
+export function composeInstructions(
+	kind: AgentKind,
+	switches?: Record<string, boolean>,
+	mode: TeachingMode = "deep",
+	sprintMinute?: number,
+	learnerProfile?: string,
+): string {
+	const segments = effectivePromptSegments(kind, switches ?? {}, mode);
+	const texts = segments.map((s) => (s.enabled ? s.overrideText! : s.sourceText));
+	// Approved auto-calibration rules (fork, phase 4): both teaching agents, any mode.
+	if (learnerProfile && kind !== "practice") texts.push(learnerProfile);
+	if (mode === "sprint" && kind !== "practice" && sprintMinute !== undefined) texts.push(sprintClockNote(sprintMinute));
+	return texts
 		.map((t) => t.trim())
 		.filter(Boolean)
 		.join("\n\n---\n\n");
+}
+
+/** The Sprint clock note (fork, 2026-10-31): the LAST segment, so it only
+ *  invalidates the prompt cache from the end. Rounded down to 5-minute
+ *  steps so the system prompt changes at most ~7 times per session. */
+export function sprintClockNote(elapsedMinutes: number): string {
+	const minute = Math.max(0, Math.floor(elapsedMinutes / 5) * 5);
+	const phase = minute < 5 ? "the click (0–5)" : minute < 25 ? "build and use it (5–25)" : minute < 30 ? "wrap-up (25–30)" : "over time — wrap up now unless he asked to keep going";
+	return `## Sprint clock\n\nMinute ~${minute} of 30. Phase: ${phase}.`;
 }
 
 // The switch-free source composition, cached per kind (module-load once).
@@ -121,6 +140,12 @@ export interface AgentBuildOptions {
 	 *  fresh per turn, honoring enabled overrides (switch on + file
 	 *  exists); absent → the cached pure-source composition. */
 	promptSwitches?: Record<string, boolean>;
+	/** Teaching mode (fork): absent = the deep source composition. */
+	teachingMode?: TeachingMode;
+	/** Sprint mode only: minutes since the session started, for the clock note. */
+	sprintMinute?: number;
+	/** Approved learner-profile rules as a prompt segment (fork, phase 4). */
+	learnerProfile?: string;
 	/** Native conversation identity: the existing persisted chat id, reused
 	 * across reconstructed prober, teacher, and practice Agents.
 	 * Debug: when set AND LH_PROVIDER_EVENTS=1, raw provider stream events
@@ -181,8 +206,8 @@ function baseAgentOptions(kind: AgentKind, opts: AgentBuildOptions, tools: Agent
 	// ("practice" is not a ModelRole) honest about that.
 	const engine = opts.engine ?? piEngineFor(kind as "prober" | "teacher");
 	const stopper = makeQuestionStopper(kind);
-	const systemPrompt = opts.promptSwitches
-		? composeInstructions(kind, opts.promptSwitches)
+	const systemPrompt = opts.promptSwitches || opts.teachingMode === "sprint" || opts.learnerProfile
+		? composeInstructions(kind, opts.promptSwitches, opts.teachingMode, opts.sprintMinute, opts.learnerProfile)
 		: composedInstructions[kind]!;
 	// Debug recorder (owner, 2026-10-04): raw provider events when
 	// LH_PROVIDER_EVENTS=1 and the caller handed a chatId; undefined is

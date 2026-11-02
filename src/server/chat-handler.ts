@@ -31,6 +31,7 @@ import { runPiTurn } from "./pi/ui-stream.ts";
 import { collectToolCallIds } from "./pi/call-ids.ts";
 import { providerEventNote } from "../agent/provider-events.ts";
 import { effectiveSettings, stores } from "./stores.ts";
+import { learnerProfilePrompt } from "./learner-profile.ts";
 import { searchAvailable, searchProvider } from "./search.ts";
 import { providerKeyPresent } from "./keys.ts";
 import {
@@ -432,6 +433,12 @@ export async function handleChatInput(
 		// point as the tool delta — the agent layer composes the system
 		// prompt fresh per turn, swapping in any enabled override segments.
 		promptSwitches: effective.agent.prompts,
+		// Sprint mode (fork, 2026-10-31): mode + the session clock, measured
+		// from the record's creation (wall clock; breaks count).
+		teachingMode: effective.agent.teachingMode,
+		sprintMinute: (Date.now() - Date.parse(record.createdAt)) / 60_000,
+		// Auto-calibration (fork, phase 4): his approved adaptation rules.
+		learnerProfile: learnerProfilePrompt(),
 	};
 	// PRACTICE BRANCH (owner design, 2026-10-04): a kind:"practice"
 	// session builds the practitioner from turn 1 — no prober→teacher

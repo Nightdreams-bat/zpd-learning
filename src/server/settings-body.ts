@@ -198,6 +198,12 @@ export function parseAgentSettingsBody(body: unknown): SettingsBodyResult<AgentS
 		}
 		settings.graphTools = graphTools.enabled === undefined ? {} : { enabled: graphTools.enabled };
 	}
+	if (raw.teachingMode !== undefined) {
+		if (raw.teachingMode !== "sprint" && raw.teachingMode !== "deep") {
+			return { ok: false, error: 'teachingMode must be "sprint" or "deep"' };
+		}
+		settings.teachingMode = raw.teachingMode;
+	}
 	return { ok: true, settings };
 }
 

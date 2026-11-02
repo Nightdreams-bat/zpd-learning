@@ -242,6 +242,8 @@ export interface DictationSettings {
 }
 
 /** Agent settings — everything about the non-conversation machinery. */
+export type TeachingMode = "sprint" | "deep";
+
 export interface AgentSettings {
 	/** Background-role model/thinking overrides (absent role = config pin). */
 	models?: Partial<Record<BackgroundModelRole, RoleModelOverride>>;
@@ -263,6 +265,10 @@ export interface AgentSettings {
 	 *  tool-toggles map. Absent = enabled (the toggle discipline); the
 	 *  effective gate composes graph.enabled AND this switch. */
 	graphTools?: { enabled?: boolean };
+	/** Teaching mode (fork, 2026-10-31): "sprint" = 30-minute click-first
+	 *  sessions (prompts/sprint/), "deep" = the original open-ended method.
+	 *  Absent = sprint. */
+	teachingMode?: TeachingMode;
 	/** System-prompt override SWITCHES keyed by segment path (absent key =
 	 *  off). Switch-on requires the override file to exist (enforced by the
 	 *  route); the switch is explicit so users keep a file on disk but run
@@ -552,6 +558,7 @@ function sanitizeAgent(raw: Record<string, unknown>): AgentSettings {
 		if (enabled === undefined) out.graphTools = {};
 		else if (typeof enabled === "boolean") out.graphTools = { enabled };
 	}
+	if (raw.teachingMode === "sprint" || raw.teachingMode === "deep") out.teachingMode = raw.teachingMode;
 	return out;
 }
 

@@ -31,6 +31,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { PATHS, PROMPTS_OVERRIDE_DIR } from "../../config.ts";
 import { FRAGMENT_RE, isValidSegmentPath, type PromptAgent, type PromptSegmentInfo } from "../core/prompt-segments.ts";
+import type { TeachingMode } from "../core/settings.ts";
 
 const PROMPTS_DIR = path.join(PATHS.root, "src", "agent", "prompts");
 
@@ -64,7 +65,34 @@ export function readPromptOverride(segmentPath: string): string | null {
  *  the shared/ fragments (the 2026-09-27 reorder: the agent's job and
  *  method lead; the shared tool/file/format mechanics are an appendix).
  *  The exact order composeInstructions composes them in. */
-export function listSourceSegments(agent: PromptAgent): Array<{ path: string; shared: boolean; file: string }> {
+export function listSourceSegments(agent: PromptAgent, mode: TeachingMode = "deep"): Array<{ path: string; shared: boolean; file: string }> {
+	const segments = listDeepSegments(agent);
+	if (mode !== "sprint" || agent === "practice") return segments;
+	return overlaySprint(agent, segments);
+}
+
+/** Sprint mode (fork, 2026-10-31): prompts/sprint/<agent>/ holds fragments
+ *  that REPLACE the same-named deep fragment, or slot in by filename order
+ *  when the name is new. Segment paths stay "<agent>/<file>", so user
+ *  overrides keep applying on top. Upstream files are never edited. */
+function overlaySprint(
+	agent: "prober" | "teacher",
+	segments: Array<{ path: string; shared: boolean; file: string }>,
+): Array<{ path: string; shared: boolean; file: string }> {
+	const dir = path.join(PROMPTS_DIR, "sprint", agent);
+	if (!fs.existsSync(dir)) return segments;
+	const own = segments.filter((s) => s.path.startsWith(`${agent}/`));
+	const byName = new Map(own.map((s) => [s.path.slice(agent.length + 1), s]));
+	for (const f of fs.readdirSync(dir).filter((f) => FRAGMENT_RE.test(f))) {
+		byName.set(f, { path: `${agent}/${f}`, shared: false, file: path.join(dir, f) });
+	}
+	const merged = [...byName.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, s]) => s);
+	const base = segments.filter((s) => s.path === "system-prompt.md");
+	const shared = segments.filter((s) => s.path.startsWith("shared/"));
+	return [...base, ...merged, ...shared];
+}
+
+function listDeepSegments(agent: PromptAgent): Array<{ path: string; shared: boolean; file: string }> {
 	// PRACTICE (owner, 2026-10-04): its own directory plus a CURATED
 	// shared appendix — the teaching base and the question/confidence/
 	// file mechanics stay out (the doctrine contradicts them; 00-base.md
@@ -105,8 +133,9 @@ export function listSourceSegments(agent: PromptAgent): Array<{ path: string; sh
 export function effectivePromptSegments(
 	agent: PromptAgent,
 	switches: Record<string, boolean>,
+	mode: TeachingMode = "deep",
 ): PromptSegmentInfo[] {
-	return listSourceSegments(agent).map((segment) => {
+	return listSourceSegments(agent, mode).map((segment) => {
 		let sourceText: string;
 		try {
 			sourceText = fs.readFileSync(segment.file, "utf-8");

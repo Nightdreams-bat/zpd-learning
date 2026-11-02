@@ -75,6 +75,7 @@ import { SettingsGroup, SettingsRow, SettingsMenuTrigger, Toggle, CommitInput } 
 import { ModelMenuList, ThinkingMenuList } from "./model-menu";
 import { ChatGPTBackgroundAccess } from "./chatgpt-connection";
 import { NativeSubscriptionBackgroundAccess } from "./subscription-connections";
+import { ProfileSettings } from "@/components/learner-profile";
 
 /** One slot's display identity — the tier's roster as the row hint rides
  *  with the resolved default (owner: the hint ALWAYS names the default). */
@@ -757,6 +758,42 @@ export function AgentSection({
 						</SettingsRow>
 					);
 				})()}
+				{/* Teaching mode (fork, 2026-10-31): Sprint = 30-minute,
+				    click-first sessions; Deep = the original open-ended method.
+				    Persisted as agent.teachingMode; absent = Sprint. */}
+				{(() => {
+					const mode = agent?.teachingMode ?? "sprint";
+					return (
+						<SettingsRow
+							label="Teaching mode"
+							hint={mode === "sprint" ? "30-minute sessions: plain-words click first, short calibration" : "Open-ended: as long as the understanding needs"}
+							testid="teaching-mode-row"
+						>
+							<div
+								role="radiogroup"
+								aria-label="Teaching mode"
+								className="flex rounded-lg border border-border/60 bg-muted/30 p-0.5"
+							>
+								{(["sprint", "deep"] as const).map((m) => (
+									<button
+										key={m}
+										type="button"
+										role="radio"
+										aria-checked={mode === m}
+										data-testid={`teaching-mode-${m}`}
+										onClick={() => onSectionChange({ ...agent, teachingMode: m })}
+										className={cn(
+											"h-8 rounded-md px-3 text-sm font-medium transition-colors",
+											mode === m ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+										)}
+									>
+										{m === "sprint" ? "Sprint" : "Deep"}
+									</button>
+								))}
+							</div>
+						</SettingsRow>
+					);
+				})()}
 				{TOGGLE_TOOLS.map((id) => (
 					<SettingsRow
 						key={id}
@@ -848,6 +885,12 @@ export function AgentSection({
 						}}
 					/>
 				</SettingsRow>
+			</SettingsGroup>
+
+			{/* Auto-calibration (fork, Sprint phase 4): rules learned from his
+			    sessions, applied only after he approves; switch any off. */}
+			<SettingsGroup label="Learner profile" testid="group-learner-profile">
+				<ProfileSettings />
 			</SettingsGroup>
 
 			<SettingsGroup label="System prompts" testid="group-prompts">
