@@ -1,6 +1,6 @@
-# zpd-learning
+# ZPD Learning for Claude Code
 
-Claude Code skills that teach you things so they stick, and keep track of what you know in an
+The same teaching method as the [ZPD Learning app](../README.md), as Claude Code skills that teach you things so they stick, and keep track of what you know in an
 Obsidian vault.
 
 You ask Claude to explain something. Before it explains, it asks you questions to find out where
@@ -76,7 +76,7 @@ recalling it.
 
 ```bash
 git clone https://github.com/Nightdreams-bat/zpd-learning
-cd zpd-learning
+cd zpd-learning/claude-code
 ./install.sh          # macOS / Linux / Git Bash
 # or
 .\install.ps1         # Windows PowerShell
