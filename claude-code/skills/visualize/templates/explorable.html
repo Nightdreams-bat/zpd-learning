@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Expectancy Explorer</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<style>
+  /* 3Blue1Brown-style palette: near-black canvas, few saturated accents, each colour = one meaning */
+  :root {
+    --bg: #0e1013; --panel: #161a20; --panel-2: #1c2129; --ink: #ece9e4; --dim: #8b949e; --grid: #262b33;
+    --blue: #58c4dd; --yellow: #ffd95a; --green: #83c167; --red: #fc6255; --white: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.6 "Inter", "Segoe UI", system-ui, sans-serif; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 20px 16px 48px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 1.25rem; font-weight: 600; margin: 0; letter-spacing: .01em; }
+  .dots { display: flex; gap: 8px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--grid); transition: background .3s; }
+  .dot.on { background: var(--blue); }
+  .dot.done { background: #3b6f7c; }
+  h2 { font-size: 1.05rem; font-weight: 600; color: var(--blue); margin: 18px 0 8px; }
+  .stage { background: var(--panel); border-radius: 12px; padding: 8px; margin-top: 10px; }
+  svg { display: block; width: 100%; height: auto; touch-action: none; user-select: none; -webkit-user-select: none; }
+  .text { margin-top: 14px; }
+  .text p { margin: 0 0 10px; }
+  .card { background: var(--panel-2); border-left: 3px solid var(--yellow); border-radius: 8px; padding: 12px 14px; margin: 12px 0; }
+  .card .label { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--yellow); margin-bottom: 4px; }
+  .card.insight { border-left-color: var(--green); }
+  .card.insight .label { color: var(--green); }
+  .hint { color: var(--dim); font-size: .9rem; }
+  button { font: inherit; border: 1px solid #39414d; background: var(--panel-2); color: var(--ink);
+    border-radius: 8px; padding: 7px 16px; cursor: pointer; transition: border-color .2s, background .2s; }
+  button:hover:not(:disabled) { border-color: var(--blue); }
+  button:disabled { opacity: .35; cursor: default; }
+  button.primary { background: #203a42; border-color: var(--blue); }
+  .controls { display: grid; grid-template-columns: auto 1fr auto; gap: 8px 12px; align-items: center; margin: 12px 0; }
+  .controls[hidden] { display: none; }
+  input[type=range] { width: 100%; accent-color: var(--blue); }
+  .val { font-variant-numeric: tabular-nums; min-width: 4.5em; text-align: right; }
+  nav { display: flex; justify-content: space-between; margin-top: 18px; }
+  .hidden { display: none; }
+  .fade { animation: fade .5s ease both; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  svg text { font-family: "Inter", "Segoe UI", system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Why 1&nbsp;:&nbsp;3 beats a high win rate</h1>
+    <div class="dots" id="dots"></div>
+  </header>
+
+  <h2 id="sceneTitle"></h2>
+  <div class="stage"><svg id="svg" viewBox="0 0 800 440"></svg></div>
+
+  <div class="text">
+    <div id="narration"></div>
+    <div class="card" id="predictCard">
+      <div class="label">Predict first</div>
+      <div id="predictQ"></div>
+      <p class="hint" style="margin:8px 0 10px">Type your answer <b>in chat</b>, with your reasoning, then reveal.</p>
+      <button class="primary" id="revealBtn">Reveal</button>
+    </div>
+    <div class="controls" id="controls" hidden></div>
+    <div class="card insight hidden" id="insightCard">
+      <div class="label">The idea</div>
+      <div id="insight"></div>
+    </div>
+  </div>
+
+  <nav>
+    <button id="prevBtn">← Back</button>
+    <span class="hint">← → keys also work</span>
+    <button id="nextBtn">Next →</button>
+  </nav>
+</div>
+
+<script>
+/* ─────────────── engine (reusable across explorables) ─────────────── */
+const NS = 'http://www.w3.org/2000/svg';
+const $ = id => document.getElementById(id);
+const svg = $('svg');
+const C = { blue: '#58c4dd', yellow: '#ffd95a', green: '#83c167', red: '#fc6255', ink: '#ece9e4', dim: '#8b949e', grid: '#262b33', white: '#ffffff', bg: '#0e1013' };
+
+function el(tag, attrs = {}, parent = svg) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'text') e.textContent = v; else e.setAttribute(k, v);
+  }
+  parent.appendChild(e);
+  return e;
+}
+const ease = p => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;   // manim's "smooth"-like
+const lerp = (a, b, t) => a + (b - a) * t;
+let token = 0;                                   // bumps on scene change → stale animations stop
+function tween(ms, fn) {
+  const my = token;
+  return new Promise(res => {
+    const t0 = performance.now();
+    function f(t) {
+      if (my !== token) return res(false);
+      const p = Math.min(1, (t - t0) / ms);
+      fn(ease(p), p);
+      p < 1 ? requestAnimationFrame(f) : res(true);
+    }
+    requestAnimationFrame(f);
+  });
+}
+function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function math(root) { if (window.renderMathInElement) renderMathInElement(root, { delimiters: [
+  { left: '$$', right: '$$', display: true }, { left: '$', right: '$', display: false }], throwOnError: false }); }
+function fmtR(x) { const s = (Math.abs(x) < 0.005 ? 0 : x).toFixed(2); return (x > 0.005 ? '+' : '') + s + 'R'; }
+
+/* slider factory: returns {input, set(v)} and calls onInput(v) */
+function slider(label, min, max, step, value, fmt, onInput) {
+  const box = $('controls');
+  const l = document.createElement('label'); l.textContent = label;
+  const i = document.createElement('input'); Object.assign(i, { type: 'range', min, max, step, value });
+  const v = document.createElement('span'); v.className = 'val';
+  box.append(l, i, v);
+  const set = x => { i.value = x; v.textContent = fmt(+x); };
+  i.addEventListener('input', () => { v.textContent = fmt(+i.value); onInput(+i.value); });
+  set(value);
+  return { input: i, set };
+}
+/* axes helper: linear maps + optional grid */
+function axes({ x0, x1, y0, y1, px0 = 80, px1 = 760, py0 = 390, py1 = 40 }) {
+  const X = v => lerp(px0, px1, (v - x0) / (x1 - x0));
+  const Y = v => lerp(py0, py1, (v - y0) / (y1 - y0));
+  return { X, Y, px0, px1, py0, py1 };
+}
+function svgPoint(evt) {
+  const p = svg.createSVGPoint(); p.x = evt.clientX; p.y = evt.clientY;
+  return p.matrixTransform(svg.getScreenCTM().inverse());
+}
+
+/* ─────────────── scenes (the part you rewrite per topic) ─────────────── */
+const scenes = [
+
+/* 1 ── HOOK: a result that feels wrong */
+{
+  title: '1 · Two traders',
+  narration: `<p><span style="color:${C.yellow}">Trader A</span> wins <b>70%</b> of trades, but each win is only half the size of a loss (R:R $1 : 0.5$).</p>
+              <p><span style="color:${C.blue}">Trader B</span> wins only <b>35%</b> — loses almost two trades out of three — but each win is three times a loss (R:R $1 : 3$).</p>`,
+  predict: `After 100 trades each, who is ahead — and by roughly how many R?`,
+  setup(api) {
+    const mk = (wins, seed) => { const r = mulberry32(seed), a = Array(100).fill(0).map((_, i) => i < wins);
+      for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+    const curve = (seq, R) => { let s = 0; return [0, ...seq.map(w => s += w ? R : -1)]; };
+    this.A = curve(mk(70, 7), 0.5); this.B = curve(mk(35, 11), 3);
+    const lo = Math.min(-5, ...this.A, ...this.B) - 2, hi = Math.max(10, ...this.A, ...this.B) + 3;
+    const ax = this.ax = axes({ x0: 0, x1: 100, y0: lo, y1: hi, px1: 700 });
+    for (let t = 0; t <= 100; t += 25) {
+      el('line', { x1: ax.X(t), x2: ax.X(t), y1: ax.py1, y2: ax.py0, stroke: C.grid });
+      el('text', { x: ax.X(t), y: ax.py0 + 22, fill: C.dim, 'font-size': 13, 'text-anchor': 'middle', text: t });
+    }
+    el('line', { x1: ax.px0, x2: ax.px1, y1: ax.Y(0), y2: ax.Y(0), stroke: C.dim, 'stroke-width': 1.5 });
+    el('text', { x: ax.px0 - 10, y: ax.Y(0) + 5, fill: C.dim, 'font-size': 13, 'text-anchor': 'end', text: '0R' });
+    el('text', { x: (ax.px0 + ax.px1) / 2, y: ax.py0 + 44, fill: C.dim, 'font-size': 13, 'text-anchor': 'middle', text: 'trades taken' });
+    this.pA = el('path', { fill: 'none', stroke: C.yellow, 'stroke-width': 3, 'stroke-linejoin': 'round' });
+    this.pB = el('path', { fill: 'none', stroke: C.blue, 'stroke-width': 3, 'stroke-linejoin': 'round' });
+    this.tA = el('text', { fill: C.yellow, 'font-size': 16, 'font-weight': 600 });
+    this.tB = el('text', { fill: C.blue, 'font-size': 16, 'font-weight': 600 });
+  },
+  async reveal() {
+    const ax = this.ax, d = arr => arr.map((v, i) => `${i ? 'L' : 'M'}${ax.X(i)},${ax.Y(v)}`).join('');
+    await tween(4000, (_, p) => {
+      const n = Math.max(1, Math.round(p * 100));
+      this.pA.setAttribute('d', d(this.A.slice(0, n + 1)));
+      this.pB.setAttribute('d', d(this.B.slice(0, n + 1)));
+      for (const [t, arr, name] of [[this.tA, this.A, 'A'], [this.tB, this.B, 'B']]) {
+        t.setAttribute('x', ax.X(n) + 10); t.setAttribute('y', ax.Y(arr[n]) + 5);
+        t.textContent = `${name}  ${arr[n] >= 0 ? '+' : ''}${arr[n].toFixed(1)}R`;
+      }
+    });
+  },
+  insight: `<p>A finishes at $70 \\times 0.5 - 30 \\times 1 = +5R$. B finishes at $35 \\times 3 - 65 \\times 1 = +40R$ — <b>eight times</b> more, while losing most of its trades.</p>
+            <p>Win rate alone tells you almost nothing. So what <i>does</i> decide it? →</p>`
+},
+
+/* 2 ── BUILD: expectancy is literally an area */
+{
+  title: '2 · The edge is an area',
+  narration: `<p>Picture one trade as a strip of width 1. A fraction $w$ of it wins $R$; the rest, $1 - w$, loses $1$.
+              Draw the wins <span style="color:${C.green}">up</span>, the losses <span style="color:${C.red}">down</span>: width = how often, height = how much.</p>`,
+  predict: `At a 50% win rate and R:R 1 : 1, what is the average result per trade? Then keep 50% but move to 1 : 2 — what is it now?`,
+  setup(api) {
+    const ax = this.ax = axes({ x0: 0, x1: 1, y0: -1.6, y1: 5.4, px0: 120, px1: 620 });
+    el('line', { x1: ax.px0 - 20, x2: ax.px1 + 20, y1: ax.Y(0), y2: ax.Y(0), stroke: C.dim, 'stroke-width': 1.5 });
+    for (const v of [1, 2, 3, 4, 5, -1]) el('text', { x: ax.px0 - 30, y: ax.Y(v) + 5, fill: C.dim, 'font-size': 12, 'text-anchor': 'end', text: (v > 0 ? '+' : '') + v + 'R' });
+    this.g = el('rect', { fill: C.green, 'fill-opacity': .75 });
+    this.r = el('rect', { fill: C.red, 'fill-opacity': .75 });
+    this.gl = el('text', { fill: C.bg, 'font-size': 14, 'text-anchor': 'middle', 'font-weight': 600 });
+    this.rl = el('text', { fill: C.bg, 'font-size': 14, 'text-anchor': 'middle', 'font-weight': 600 });
+    this.wl = el('text', { fill: C.dim, 'font-size': 13, 'text-anchor': 'middle' });
+    this.E = el('text', { x: 700, y: 190, 'font-size': 30, 'font-weight': 700, 'text-anchor': 'middle' });
+    el('text', { x: 700, y: 150, fill: C.dim, 'font-size': 13, 'text-anchor': 'middle', text: 'green − red =' });
+    el('text', { x: 700, y: 220, fill: C.dim, 'font-size': 13, 'text-anchor': 'middle', text: 'per trade' });
+    this.w = 0.5; this.R = 1; this.draw();
+    api.slider('Win rate', 0.05, 0.95, 0.01, this.w, v => Math.round(v * 100) + '%', v => { this.w = v; this.draw(); });
+    api.slider('R : R  1 :', 0.25, 5, 0.25, this.R, v => v.toFixed(2), v => { this.R = v; this.draw(); });
+  },
+  draw() {
+    const { ax, w, R } = this, xm = ax.X(w);
+    Object.entries({ x: ax.X(0), y: ax.Y(R), width: xm - ax.X(0), height: ax.Y(0) - ax.Y(R) }).forEach(([k, v]) => this.g.setAttribute(k, v));
+    Object.entries({ x: xm, y: ax.Y(0), width: ax.X(1) - xm, height: ax.Y(-1) - ax.Y(0) }).forEach(([k, v]) => this.r.setAttribute(k, v));
+    this.gl.setAttribute('x', (ax.X(0) + xm) / 2); this.gl.setAttribute('y', ax.Y(R / 2) + 5);
+    this.gl.textContent = w > .22 && R >= .75 ? `w·R = ${(w * R).toFixed(2)}` : '';
+    this.rl.setAttribute('x', (xm + ax.X(1)) / 2); this.rl.setAttribute('y', ax.Y(-.5) + 5);
+    this.rl.textContent = w < .78 ? `1−w = ${(1 - w).toFixed(2)}` : '';
+    this.wl.setAttribute('x', xm); this.wl.setAttribute('y', ax.Y(-1) + 22); this.wl.textContent = `w = ${Math.round(w * 100)}%`;
+    const E = w * R - (1 - w);
+    this.E.textContent = fmtR(E); this.E.setAttribute('fill', E > 0.005 ? C.green : E < -0.005 ? C.red : C.ink);
+  },
+  async reveal(api) {
+    const R0 = this.R;
+    await tween(1600, t => { this.R = lerp(R0, 2, t); this.draw(); });
+    api.sliders[1].set(2);
+  },
+  insight: `<p>$$E = w \\cdot R - (1 - w) \\cdot 1$$ At 50% and 1 : 1 the two rectangles are equal: $E = 0$. Stretch the win to 1 : 2 and the green area doubles: $E = +0.5R$ per trade.</p>
+            <p>Win rate stretches the <b>width</b>; R:R stretches the <b>height</b>. Only the net <b>area</b> pays. Now play with both sliders.</p>`
+},
+
+/* 3 ── GENERALISE: the break-even curve */
+{
+  title: '3 · The break-even curve',
+  narration: `<p>Every trading style is a point: R:R across, win rate up. Some points make money, some bleed. The border between them is where the two areas are exactly equal.</p>`,
+  predict: `At R:R 1 : 3, what win rate do you need just to break even — and how did you get it?`,
+  setup(api) {
+    const ax = this.ax = axes({ x0: 0, x1: 5, y0: 0, y1: 1, px0: 90, px1: 740, py0: 390, py1: 40 });
+    const be = R => 1 / (1 + R), pts = [];
+    for (let R = 0; R <= 5.0001; R += 0.05) pts.push([ax.X(R), ax.Y(be(R))]);
+    const line = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0]},${p[1]}`).join('');
+    el('path', { d: `${line}L${ax.px1},${ax.py1}L${ax.px0},${ax.py1}Z`, fill: C.green, 'fill-opacity': .10 });
+    el('path', { d: `${line}L${ax.px1},${ax.py0}L${ax.px0},${ax.py0}Z`, fill: C.red, 'fill-opacity': .10 });
+    for (const v of [.25, .5, .75, 1]) {
+      el('line', { x1: ax.px0, x2: ax.px1, y1: ax.Y(v), y2: ax.Y(v), stroke: C.grid });
+      el('text', { x: ax.px0 - 10, y: ax.Y(v) + 5, fill: C.dim, 'font-size': 12, 'text-anchor': 'end', text: v * 100 + '%' });
+    }
+    for (let R = 1; R <= 5; R++) el('text', { x: ax.X(R), y: ax.py0 + 22, fill: C.dim, 'font-size': 12, 'text-anchor': 'middle', text: '1:' + R });
+    el('text', { x: (ax.px0 + ax.px1) / 2, y: ax.py0 + 44, fill: C.dim, 'font-size': 13, 'text-anchor': 'middle', text: 'reward : risk' });
+    el('text', { x: ax.X(4.2), y: ax.Y(.62), fill: C.green, 'font-size': 15, 'text-anchor': 'middle', text: 'makes money' });
+    el('text', { x: ax.X(4.2), y: ax.Y(.08), fill: C.red, 'font-size': 15, 'text-anchor': 'middle', text: 'loses money' });
+    el('path', { d: line, fill: 'none', stroke: C.ink, 'stroke-width': 2.5 });
+    for (const [R, w, c, n] of [[.5, .7, C.yellow, 'A'], [3, .35, C.blue, 'B']]) {
+      el('circle', { cx: ax.X(R), cy: ax.Y(w), r: 7, fill: c });
+      el('text', { x: ax.X(R) + 12, y: ax.Y(w) - 10, fill: c, 'font-size': 15, 'font-weight': 600, text: n });
+    }
+    this.v = el('line', { stroke: C.yellow, 'stroke-width': 2, 'stroke-dasharray': '6 5', opacity: 0 });
+    this.vl = el('text', { fill: C.yellow, 'font-size': 15, 'font-weight': 600, opacity: 0 });
+    this.P = el('circle', { r: 8, fill: 'none', stroke: C.white, 'stroke-width': 2.5, opacity: 0 });
+    this.Pl = el('text', { fill: C.ink, 'font-size': 14, opacity: 0 });
+    this.R = 2; this.w = .5;
+    api.slider('R : R  1 :', 0.25, 5, 0.05, this.R, v => v.toFixed(2), v => { this.R = v; this.drawP(); });
+    api.slider('Win rate', 0.02, 0.98, 0.01, this.w, v => Math.round(v * 100) + '%', v => { this.w = v; this.drawP(); });
+    const drag = e => { if (!this.live || !(e.buttons & 1)) return; const p = svgPoint(e);
+      this.R = Math.min(5, Math.max(.25, (p.x - ax.px0) / (ax.px1 - ax.px0) * 5));
+      this.w = Math.min(.98, Math.max(.02, (ax.py0 - p.y) / (ax.py0 - ax.py1)));
+      api.sliders[0].set(this.R); api.sliders[1].set(this.w); this.drawP(); };
+    svg.onpointerdown = e => { svg.setPointerCapture(e.pointerId); drag(e); }; svg.onpointermove = drag;
+  },
+  drawP() {
+    const { ax, R, w } = this, E = w * R - (1 - w), be = 1 / (1 + R);
+    this.P.setAttribute('cx', ax.X(R)); this.P.setAttribute('cy', ax.Y(w)); this.P.setAttribute('opacity', 1);
+    const right = ax.X(R) > 560;
+    this.Pl.setAttribute('x', ax.X(R) + (right ? -14 : 14)); this.Pl.setAttribute('y', ax.Y(w) + 24);
+    this.Pl.setAttribute('text-anchor', right ? 'end' : 'start'); this.Pl.setAttribute('opacity', 1);
+    this.Pl.textContent = `E = ${fmtR(E)} · break-even here ${Math.round(be * 1000) / 10}%`;
+  },
+  async reveal() {
+    const ax = this.ax, x = ax.X(3);
+    this.v.setAttribute('x1', x); this.v.setAttribute('x2', x); this.v.setAttribute('y1', ax.py0); this.v.setAttribute('opacity', 1);
+    await tween(1400, t => this.v.setAttribute('y2', lerp(ax.py0, ax.Y(.25), t)));
+    this.vl.setAttribute('x', x + 12); this.vl.setAttribute('y', ax.Y(.25) + 22); this.vl.textContent = '25%';
+    await tween(400, t => this.vl.setAttribute('opacity', t));
+    this.live = true; this.drawP();
+  },
+  insight: `<p>Set the areas equal: $w \\cdot R = 1 - w \\;\\Rightarrow\\; w = \\dfrac{1}{1 + R}$. At 1 : 3 that's $\\tfrac14 = 25\\%$.</p>
+            <p>Your edge is <b>how far above the curve</b> you sit. A needs 66.7% and has 70% — a sliver. B needs 25% and has 35% — a wide margin. Drag the white ring (or use the sliders) to feel it. <span class="hint">Ignores fees and slippage, which push the curve up.</span></p>`
+}
+];
+
+/* ─────────────── runtime ─────────────── */
+let idx = 0; const revealed = scenes.map(() => false);
+scenes.forEach(() => $('dots').appendChild(Object.assign(document.createElement('div'), { className: 'dot' })));
+
+function show(i) {
+  token++; idx = i; const s = scenes[i];
+  svg.innerHTML = ''; svg.onpointerdown = svg.onpointermove = null; s.live = false;
+  $('controls').innerHTML = ''; $('controls').hidden = true;
+  const api = { sliders: [], slider: (...a) => { const sl = slider(...a); api.sliders.push(sl); return sl; } };
+  s.api = api;
+  $('sceneTitle').textContent = s.title;
+  $('narration').innerHTML = s.narration;
+  $('predictQ').innerHTML = s.predict || '';
+  $('insight').innerHTML = s.insight || '';
+  s.setup(api);
+  const done = revealed[i];
+  $('predictCard').classList.toggle('hidden', !s.predict || done);
+  $('insightCard').classList.toggle('hidden', !done);
+  $('controls').hidden = !done || !api.sliders.length;
+  if (done) s.reveal(api);                         // replay on revisit
+  [...$('dots').children].forEach((d, j) => d.className = 'dot' + (j === i ? ' on' : revealed[j] ? ' done' : ''));
+  $('prevBtn').disabled = i === 0; $('nextBtn').disabled = i === scenes.length - 1;
+  document.querySelectorAll('.text > div').forEach(d => d.classList.remove('fade'));
+  math(document.body);
+}
+$('revealBtn').onclick = async () => {
+  const s = scenes[idx]; revealed[idx] = true;
+  $('predictCard').classList.add('hidden');
+  const ok = await s.reveal(s.api);
+  $('insightCard').classList.remove('hidden'); $('insightCard').classList.add('fade');
+  if (s.api.sliders.length) { $('controls').hidden = false; $('controls').classList.add('fade'); }
+  [...$('dots').children][idx].className = 'dot on';
+  math($('insightCard'));
+};
+$('prevBtn').onclick = () => idx > 0 && show(idx - 1);
+$('nextBtn').onclick = () => idx < scenes.length - 1 && show(idx + 1);
+addEventListener('keydown', e => { if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'ArrowRight') $('nextBtn').click(); if (e.key === 'ArrowLeft') $('prevBtn').click(); });
+addEventListener('load', () => math(document.body));
+show(0);
+</script>
+</body>
+</html>
